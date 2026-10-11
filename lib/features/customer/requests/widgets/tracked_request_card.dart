@@ -1,0 +1,70 @@
+import 'package:flutter/material.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_text_styles.dart';
+import '../../home/models/property_request.dart';
+import 'request_status_badge.dart';
+
+/// A request the client posted themselves, shown on the "My Requests"
+/// tracking tab — distinct from [RequestCard], which is the browsing
+/// card used on the home/search screens. This one leads with status
+/// (open / offers received / closed) instead of specs.
+class TrackedRequestCard extends StatelessWidget {
+  final PropertyRequest request;
+  final VoidCallback? onTap;
+
+  const TrackedRequestCard({super.key, required this.request, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  RequestStatusBadge(status: request.status),
+                  const Spacer(),
+                  Expanded(
+                    flex: 5,
+                    child: Text(request.title, style: AppTextStyles.heading3, textAlign: TextAlign.start, overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Flexible(child: Text(request.location, style: AppTextStyles.bodySmall, textAlign: TextAlign.start)),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(height: 1, color: AppColors.border),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  RequestOffersCountLabel(offersCount: request.offersCount),
+                  const Spacer(),
+                  Text(request.priceRange, style: AppTextStyles.priceLarge),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

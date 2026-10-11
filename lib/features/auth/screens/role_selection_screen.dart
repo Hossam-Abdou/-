@@ -1,0 +1,71 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
+import '../../../config/router/app_router.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/shared/widgets/buttons/app_primary_button.dart';
+import '../models/user_role.dart';
+import '../widgets/role_option_card.dart';
+import '../../../generated/locale_keys.g.dart';
+
+class RoleSelectionScreen extends StatefulWidget {
+  const RoleSelectionScreen({super.key});
+
+  @override
+  State<RoleSelectionScreen> createState() => _RoleSelectionScreenState();
+}
+
+class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
+  UserRole _selectedRole = UserRole.client;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 32),
+              Text(LocaleKeys.roleSelectionTitle.tr(), style: AppTextStyles.heading1, textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(LocaleKeys.roleSelectionSubtitle.tr(), style: AppTextStyles.bodyRegular, textAlign: TextAlign.center),
+              const SizedBox(height: 32),
+              RoleOptionCard(
+                icon: Icons.search,
+                title: LocaleKeys.roleClientTitle.tr(),
+                description: LocaleKeys.roleClientDesc.tr(),
+                isSelected: _selectedRole == UserRole.client,
+                onTap: () => setState(() => _selectedRole = UserRole.client),
+              ),
+              const SizedBox(height: 16),
+              RoleOptionCard(
+                icon: Icons.badge_outlined,
+                title: LocaleKeys.roleMarketerTitle.tr(),
+                description: LocaleKeys.roleMarketerDesc.tr(),
+                isSelected: _selectedRole == UserRole.marketer,
+                onTap: () => setState(() => _selectedRole = UserRole.marketer),
+              ),
+              const Spacer(),
+              AppPrimaryButton(
+                label: LocaleKeys.continueLabel.tr(),
+                onPressed: () => Navigator.pushNamed(context, AppRoutes.register, arguments: _selectedRole),
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.pushNamed(context, AppRoutes.login, arguments: _selectedRole),
+                  child: Text(
+                    LocaleKeys.loginLabel.tr(),
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
