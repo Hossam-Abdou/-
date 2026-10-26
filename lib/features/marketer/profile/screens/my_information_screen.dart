@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/network/api_error_text.dart';
+import '../../../../core/shared/widgets/app_snack_bar.dart';
+import '../../../profile/cubit/profile_cubit.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../../../../core/shared/widgets/buttons/app_back_button.dart';
 import '../../../../core/shared/widgets/buttons/app_primary_button.dart';
@@ -7,13 +11,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
 
-/// Edit-personal-details screen for the marketer account. Adds a bio
-/// field on top of name/email/phone, since a marketer's profile is
-/// client-facing (shown on offers). Demo data is pre-filled to match
-/// the mock name on the marketer Profile tab header.
-///
-/// Submission is simulated (no backend yet): validates the form,
-/// shows a success dialog, and pops back.
+/// Edit-personal-details screen for the marketer account (real profile,
+/// saved through [ProfileCubit]). Has a bio since it is shown on offers.
 class MarketerMyInformationScreen extends StatefulWidget {
   const MarketerMyInformationScreen({super.key});
 
@@ -23,11 +22,29 @@ class MarketerMyInformationScreen extends StatefulWidget {
 
 class _MarketerMyInformationScreenState extends State<MarketerMyInformationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController(text: 'أحمد محمود');
-  final _emailController = TextEditingController(text: 'ahmed.mahmoud@example.com');
-  final _phoneController = TextEditingController(text: '01098765432');
-  final _bioController = TextEditingController(text: 'مسوق عقاري في القاهرة الجديدة، متخصص في الشقق والفيلل السكنية.');
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _bioController = TextEditingController();
   bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final cubit = context.read<ProfileCubit>();
+    _fill(cubit.state.selected);
+    cubit.load().then((_) {
+      if (mounted) _fill(cubit.state.selected);
+    });
+  }
+
+  void _fill(profile) {
+    if (profile == null) return;
+    _nameController.text = profile.fullName;
+    _emailController.text = profile.email ?? '';
+    _phoneController.text = profile.phone ?? '';
+    _bioController.text = profile.bio ?? '';
+  }
 
   @override
   void dispose() {
@@ -41,10 +58,19 @@ class _MarketerMyInformationScreenState extends State<MarketerMyInformationScree
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final cubit = context.read<ProfileCubit>();
     setState(() => _submitting = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    final ok = await cubit.update(
+      fullName: _nameController.text.trim(),
+      phone: _phoneController.text.trim(),
+      bio: _bioController.text.trim(),
+    );
     if (!mounted) return;
     setState(() => _submitting = false);
+    if (!ok) {
+      showAppSnackBar(context, cubit.state.error!.text, isError: true);
+      return;
+    }
 
     await showDialog<void>(
       context: context,
@@ -84,7 +110,7 @@ class _MarketerMyInformationScreenState extends State<MarketerMyInformationScree
             children: [
               ValidatedTextField(controller: _nameController, label: LocaleKeys.fullNameLabel.tr()),
               const SizedBox(height: 16),
-              ValidatedTextField(controller: _emailController, label: LocaleKeys.emailLabel.tr(), keyboardType: TextInputType.emailAddress),
+              ValidatedTextField(controller: _emailController, label: LocaleKeys.emailLabel.tr(), keyboardType: TextInputType.emailAddress, readOnly: true),
               const SizedBox(height: 16),
               ValidatedTextField(controller: _phoneController, label: LocaleKeys.phoneLabel.tr(), keyboardType: TextInputType.phone),
               const SizedBox(height: 16),

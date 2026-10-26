@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../../core/shared/widgets/date_time_label.dart';
 import '../../home/models/property_request.dart';
 import 'request_status_badge.dart';
 
@@ -50,6 +51,10 @@ class TrackedRequestCard extends StatelessWidget {
                   const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
                 ],
               ),
+              if (request.createdAt != null) ...[
+                const SizedBox(height: 6),
+                Align(alignment: AlignmentDirectional.centerStart, child: DateTimeLabel(date: request.createdAt)),
+              ],
               const SizedBox(height: 12),
               Container(height: 1, color: AppColors.border),
               const SizedBox(height: 12),

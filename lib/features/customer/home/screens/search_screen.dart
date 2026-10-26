@@ -1,61 +1,97 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../config/router/app_router.dart';
+import '../../../../core/shared/cubit/api_state.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/shared/widgets/buttons/app_back_button.dart';
 import '../../../../generated/locale_keys.g.dart';
-import '../models/property_request.dart';
-import '../widgets/request_card.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../listings/data/listings_repository.dart';
+import '../../../listings/models/listing_model.dart';
+import '../../../listings/widgets/listings_message.dart';
+import '../widgets/listing_card.dart';
 
-/// Full search screen for the client flow — a live text field plus
-/// the same category chips used on the home tab, filtering the mock
-/// request list as the user types. Backed by [searchPropertyRequests];
-/// swap that for a repository/API call once the backend exists.
-class SearchScreen extends StatefulWidget {
+/// Search over the marketers' listings (`GET listings?q=&property_type=`):
+/// a text field plus the same category chips used on the home tab.
+class SearchScreen extends StatelessWidget {
   const SearchScreen({super.key});
 
   @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => ListingsCubit(ListingsRepository()),
+      child: const _SearchView(),
+    );
+  }
 }
 
-class _SearchScreenState extends State<SearchScreen> {
-  final TextEditingController _controller = TextEditingController();
-  String _query = '';
-  String? _selectedCategory;
-  bool _initializedFromArgs = false;
+class _SearchView extends StatefulWidget {
+  const _SearchView();
+
+  @override
+  State<_SearchView> createState() => _SearchViewState();
+}
+
+class _SearchViewState extends State<_SearchView> {
+  final _controller = TextEditingController();
+  final _scroll = ScrollController();
+  Timer? _debounce;
+  String? _selectedCategory; // localized label of the chip
+  bool _initialized = false;
+
+  /// The chips are localized labels, but `property_type` is stored in Arabic.
+  Map<String, String> get _typeOf => {
+        LocaleKeys.categoryOffice.tr(): 'مكتب',
+        LocaleKeys.categoryLand.tr(): 'أرض',
+        LocaleKeys.categoryStudio.tr(): 'استوديو',
+        LocaleKeys.categoryVilla.tr(): 'فيلا',
+        LocaleKeys.categoryApartment.tr(): 'شقة',
+      };
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 300) {
+        context.read<ListingsCubit>().loadMore();
+      }
+    });
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // A category tapped on the home tab arrives as this route's
-    // arguments (see ClientShellScreen -> HomeScreen), so the chip
-    // shows pre-selected instead of the user re-picking it here.
-    if (!_initializedFromArgs) {
+    // A category tapped on the home tab arrives as the route argument.
+    if (!_initialized) {
       final args = ModalRoute.of(context)?.settings.arguments;
-      if (args is String && args.isNotEmpty) {
-        _selectedCategory = args;
-      }
-      _initializedFromArgs = true;
+      if (args is String && args.isNotEmpty) _selectedCategory = args;
+      _initialized = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => search());
     }
+  }
+
+  void search() {
+    context.read<ListingsCubit>().load(ListingFilter(
+          q: _controller.text.trim(),
+          propertyType: _typeOf[_selectedCategory],
+        ));
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final categories = [
-      LocaleKeys.categoryOffice.tr(),
-      LocaleKeys.categoryLand.tr(),
-      LocaleKeys.categoryStudio.tr(),
-      LocaleKeys.categoryVilla.tr(),
-      LocaleKeys.categoryApartment.tr(),
-    ];
-    final results = searchPropertyRequests(_query, category: _selectedCategory);
+    final categories = _typeOf.keys.toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -92,16 +128,22 @@ class _SearchScreenState extends State<SearchScreen> {
                           hintText: LocaleKeys.searchPlaceholder.tr(),
                           hintStyle: AppTextStyles.bodyRegular,
                         ),
-                        onChanged: (value) => setState(() => _query = value),
+                        onChanged: (_) {
+                          // wait for a pause in typing before calling the API
+                          _debounce?.cancel();
+                          _debounce = Timer(const Duration(milliseconds: 400), search);
+                          setState(() {});
+                        },
                       ),
                     ),
-                    if (_query.isNotEmpty)
+                    if (_controller.text.isNotEmpty)
                       IconButton(
                         icon: const Icon(Icons.close, size: 18, color: AppColors.textSecondary),
-                        onPressed: () => setState(() {
+                        onPressed: () {
                           _controller.clear();
-                          _query = '';
-                        }),
+                          setState(() {});
+                          search();
+                        },
                       ),
                   ],
                 ),
@@ -122,7 +164,10 @@ class _SearchScreenState extends State<SearchScreen> {
                       selectedColor: AppColors.primary,
                       backgroundColor: AppColors.surface,
                       side: BorderSide(color: isSelected ? AppColors.primary : AppColors.border),
-                      onSelected: (selected) => setState(() => _selectedCategory = selected ? label : null),
+                      onSelected: (selected) {
+                        setState(() => _selectedCategory = selected ? label : null);
+                        search();
+                      },
                     ),
                   );
                 }).toList(),
@@ -130,45 +175,26 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: results.isEmpty
-                  ? _EmptyResults(query: _query)
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                      itemCount: results.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 16),
-                      itemBuilder: (context, index) {
-                        final r = results[index];
-                        return RequestCard(
-                          request: r,
-                          onTap: () => Navigator.pushNamed(context, AppRoutes.requestDetails, arguments: r.id),
-                        );
-                      },
-                    ),
+              child: BlocBuilder<ListingsCubit, ApiState<ListingModel>>(
+                builder: (context, state) {
+                  final message = ListingsMessage.of(state, search);
+                  if (message != null) return SingleChildScrollView(child: message);
+                  return ListView.separated(
+                    controller: _scroll,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    itemCount: state.items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 16),
+                    itemBuilder: (context, index) {
+                      final l = state.items[index];
+                      return ListingCard(
+                        listing: l,
+                        onTap: () => Navigator.pushNamed(context, AppRoutes.listingDetails, arguments: l.id),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyResults extends StatelessWidget {
-  final String query;
-  const _EmptyResults({required this.query});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.search_off, size: 40, color: AppColors.textMuted),
-            const SizedBox(height: 12),
-            Text(LocaleKeys.searchNoResultsTitle.tr(), style: AppTextStyles.heading4, textAlign: TextAlign.center),
-            const SizedBox(height: 4),
-            Text(LocaleKeys.searchNoResultsDesc.tr(), style: AppTextStyles.bodySmall, textAlign: TextAlign.center),
           ],
         ),
       ),

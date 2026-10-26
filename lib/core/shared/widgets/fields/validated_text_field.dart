@@ -10,19 +10,27 @@ import '../../../../generated/locale_keys.g.dart';
 /// personal info, etc.) — [AppTextField] itself stays validation-free
 /// since most call sites don't need it.
 class ValidatedTextField extends StatelessWidget {
-  final TextEditingController controller;
+  final TextEditingController? controller; // or use [initialValue] + [onChanged]
+  final String? initialValue;
+  final ValueChanged<String>? onChanged;
   final String label;
   final TextInputType keyboardType;
   final int maxLines;
   final bool required;
+  final String? hint;
+  final bool readOnly;
 
   const ValidatedTextField({
     super.key,
-    required this.controller,
+    this.controller,
+    this.initialValue,
+    this.onChanged,
     required this.label,
     this.keyboardType = TextInputType.text,
     this.maxLines = 1,
     this.required = true,
+    this.hint,
+    this.readOnly = false,
   });
 
   @override
@@ -34,6 +42,9 @@ class ValidatedTextField extends StatelessWidget {
         const SizedBox(height: 6),
         TextFormField(
           controller: controller,
+          initialValue: controller == null ? initialValue : null,
+          onChanged: onChanged,
+          readOnly: readOnly,
           keyboardType: keyboardType,
           maxLines: maxLines,
           textAlign: TextAlign.start,
@@ -42,6 +53,8 @@ class ValidatedTextField extends StatelessWidget {
           decoration: InputDecoration(
             filled: true,
             fillColor: AppColors.surface,
+            hintText: hint,
+            hintStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted),
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),

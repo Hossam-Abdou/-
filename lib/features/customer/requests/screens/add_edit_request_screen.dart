@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/data/locations.dart';
+import '../../../../core/network/api_error_text.dart';
 import '../../../../core/shared/widgets/buttons/app_primary_button.dart';
+import '../../../requests/cubit/requests_cubit.dart';
+import '../../../requests/models/request_model.dart';
 import '../../../../core/shared/widgets/sticky_bottom_bar.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
@@ -12,6 +17,8 @@ import '../widgets/range_field_row.dart';
 import '../widgets/request_form_options.dart';
 import '../widgets/request_review_row.dart';
 import '../widgets/request_step_progress.dart';
+import '../../../requests/models/request_preview.dart';
+import '../../../../core/shared/widgets/fields/validated_text_field.dart';
 
 /// Add-request and edit-request share this one 4-step wizard (type ->
 /// location -> details -> review & publish), mirroring the Figma
@@ -20,9 +27,8 @@ import '../widgets/request_step_progress.dart';
 /// fields are pre-filled and the wizard opens straight to step 1 in
 /// edit mode.
 ///
-/// Submission is simulated: there's no backend yet, so this shows a
-/// success dialog and pops back — swap `_submit` for a real API call
-/// once [mockRecentRequests] is replaced by a repository.
+/// Submitting calls the backend through [RequestsCubit] (`POST requests` /
+/// `PATCH requests/{id}`), then shows a success dialog and pops back.
 class AddEditRequestScreen extends StatefulWidget {
   final PropertyRequest? existingRequest;
 
@@ -50,21 +56,54 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
   String? _bathrooms;
   String? _finishing;
   late final TextEditingController _notesController;
+  late final TextEditingController _titleController;
 
   bool get _isEditMode => widget.existingRequest != null;
+
+  // Cities / districts come from the same constants the backend ids use.
+  List<String> get _cityOptions => [for (final c in Locations.cities) c.nameAr];
+  City? get _cityObj => Locations.cities.where((c) => c.nameAr == _city).firstOrNull;
+  List<District> get _districtObjs => _cityObj == null ? const [] : Locations.districtsOf(_cityObj!.id);
+  District? get _districtObj => _districtObjs.where((d) => d.nameAr == _district).firstOrNull;
+
+  double? _number(String text) => double.tryParse(text.replaceAll(RegExp('[^0-9.]'), ''));
+  int? _count(String? text) => text == null ? null : int.tryParse(text.replaceAll('+', ''));
 
   @override
   void initState() {
     super.initState();
     final r = widget.existingRequest;
 
-    _selectedType = (r != null && requestPropertyTypeOptions.contains(r.propertyType)) ? r.propertyType : requestPropertyTypeOptions.first;
-
-    if (r != null && r.location.contains('،')) {
-      final parts = r.location.split('،').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-      if (parts.isNotEmpty) _district = parts.first;
-      if (parts.length > 1) _city = requestCityOptions.contains(parts.last) ? parts.last : null;
+    // Prefer the backend record: it has the exact city / district / type, while
+    // the preview only carries a joined "district، city" string.
+    RequestModel? model;
+    if (r != null) {
+      final st = context.read<RequestsCubit>().state;
+      model = [if (st.selected != null) st.selected!, ...st.items].where((e) => e.id == r.id).firstOrNull;
     }
+    final type = model?.propertyType ?? r?.propertyType;
+    _selectedType = (type != null && requestPropertyTypeOptions.contains(type)) ? type : (r != null && type != null && type.isNotEmpty ? 'أخرى' : requestPropertyTypeOptions.first);
+
+    if (model != null) {
+      _city = model.cityNameAr;
+      _district = model.districtNameAr;
+      if (model.compound != null && requestCompoundOptions.contains(model.compound)) _compound = model.compound;
+    } else if (r != null && r.location.isNotEmpty) {
+      final parts = r.location.split('\u060c').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      if (parts.length > 1) {
+        _district = parts.first;
+        _city = parts.last;
+      } else if (parts.length == 1) {
+        if (_cityOptions.contains(parts.first)) {
+          _city = parts.first;
+        } else {
+          _district = parts.first;
+        }
+      }
+    }
+    // Only keep values the dropdowns can show.
+    if (!_cityOptions.contains(_city)) _city = null;
+    if (_city == null || !_districtObjs.any((d) => d.nameAr == _district)) _district = null;
 
     final priceParts = r?.priceRange.split('-').map((e) => e.trim().replaceAll(RegExp('[^0-9]'), '')).toList() ?? const [];
     _budgetFromController = TextEditingController(text: priceParts.isNotEmpty ? priceParts[0] : '');
@@ -78,6 +117,11 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
     _bathrooms = r != null && requestBathroomsOptions.contains('${r.bathrooms}') ? '${r.bathrooms}' : null;
     _finishing = r != null && requestFinishingOptions.contains(r.finishing) ? r.finishing : null;
     _notesController = TextEditingController(text: r?.description ?? '');
+    // Keep a title the customer wrote; an auto-made one ("مطلوب <type>") is
+    // left empty so it keeps following the chosen type.
+    final oldTitle = r?.title ?? '';
+    final wasAuto = oldTitle.isEmpty || oldTitle.startsWith('مطلوب ');
+    _titleController = TextEditingController(text: wasAuto ? '' : oldTitle);
   }
 
   @override
@@ -87,6 +131,7 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
     _areaFromController.dispose();
     _areaToController.dispose();
     _notesController.dispose();
+    _titleController.dispose();
     super.dispose();
   }
 
@@ -136,32 +181,48 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
     return buffer.isEmpty ? LocaleKeys.noneOptionLabel.tr() : buffer.join('، ');
   }
 
+  String get _title {
+    final t = _titleController.text.trim();
+    return t.isEmpty ? 'مطلوب $_selectedType' : t;
+  }
+
   Future<void> _submit() async {
     setState(() => _submitting = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+
+    // The customer's own title; falls back to one built from the type.
+    final title = _title;
+    final notes = _notesController.text.trim();
+    final input = RequestInput(
+      title: title,
+      propertyType: _selectedType,
+      cityId: _cityObj?.id,
+      districtId: _districtObj?.id,
+      compound: (_compound == null || _compound == requestCompoundOptions.first) ? null : _compound,
+      budgetFrom: _number(_budgetFromController.text),
+      budgetTo: _number(_budgetToController.text),
+      areaFrom: _number(_areaFromController.text),
+      areaTo: _number(_areaToController.text),
+      rooms: _count(_rooms),
+      bathrooms: _count(_bathrooms),
+      finishing: _finishing,
+      description: notes.isEmpty ? title : notes, // the column can't be empty
+    );
+
+    final cubit = context.read<RequestsCubit>();
+    final ok = _isEditMode ? await cubit.update(widget.existingRequest!.id, input) : await cubit.create(input);
+    if (ok && _isEditMode) {
+      // Keep the shared preview cache (details / edit / home) in step with the server.
+      final saved = cubit.state.selected;
+      if (saved != null) updatePropertyRequest(saved.toPreview());
+    }
     if (!mounted) return;
     setState(() => _submitting = false);
 
-    final request = PropertyRequest(
-      id: widget.existingRequest?.id ?? 'req-${DateTime.now().millisecondsSinceEpoch}',
-      title: widget.existingRequest?.title ?? 'مطلوب $_selectedType',
-      location: _locationSummary,
-      area: _areaSummary,
-      rooms: int.tryParse(_rooms?.replaceAll('+', '') ?? '') ?? 0,
-      bathrooms: int.tryParse(_bathrooms?.replaceAll('+', '') ?? '') ?? 0,
-      priceRange: _budgetSummary,
-      propertyType: _selectedType,
-      finishing: _finishing ?? '',
-      description: _notesController.text.trim(),
-      isNew: widget.existingRequest?.isNew ?? true,
-      status: widget.existingRequest?.status ?? PropertyRequestStatus.open,
-      offersCount: widget.existingRequest?.offersCount ?? 0,
-    );
-
-    if (_isEditMode) {
-      updatePropertyRequest(request);
-    } else {
-      addPropertyRequest(request);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(cubit.state.error!.text), backgroundColor: AppColors.error),
+      );
+      return;
     }
 
     await showDialog<void>(
@@ -244,6 +305,13 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
             Text(LocaleKeys.propertyTypeLabel.tr(), style: AppTextStyles.heading2),
             const SizedBox(height: 16),
             PropertyTypeOptionGrid(selected: _selectedType, onChanged: (type) => setState(() => _selectedType = type)),
+            const SizedBox(height: 24),
+            ValidatedTextField(
+              controller: _titleController,
+              label: '${LocaleKeys.requestTitleLabel.tr()} (${LocaleKeys.requestTitleOptional.tr()})',
+              hint: 'مطلوب $_selectedType',
+              required: false,
+            ),
           ],
         );
       case 2:
@@ -259,7 +327,7 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
               icon: Icons.location_city_outlined,
               value: _city,
               placeholder: LocaleKeys.cityPlaceholder.tr(),
-              options: requestCityOptions,
+              options: _cityOptions,
               onChanged: (value) => setState(() {
                 _city = value;
                 _district = null;
@@ -271,7 +339,7 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
               icon: Icons.map_outlined,
               value: _district,
               placeholder: LocaleKeys.districtPlaceholder.tr(),
-              options: _city != null ? (requestDistrictsByCity[_city] ?? const []) : const [],
+              options: [for (final d in _districtObjs) d.nameAr],
               enabled: _city != null,
               onChanged: (value) => setState(() => _district = value),
             ),
@@ -392,6 +460,8 @@ class _AddEditRequestScreenState extends State<AddEditRequestScreen> {
           ),
           child: Column(
             children: [
+              RequestReviewRow(icon: Icons.title, label: LocaleKeys.requestTitleLabel.tr(), value: _title),
+              const Divider(height: 1, color: AppColors.border),
               RequestReviewRow(icon: Icons.apartment, label: LocaleKeys.propertyTypeLabel.tr(), value: _selectedType),
               const Divider(height: 1, color: AppColors.border),
               RequestReviewRow(

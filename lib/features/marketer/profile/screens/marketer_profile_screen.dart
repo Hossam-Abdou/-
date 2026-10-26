@@ -1,4 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:skeletonizer/skeletonizer.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../auth/data/auth_repository.dart';
+import '../../../profile/cubit/profile_cubit.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../offers/cubit/offers_cubit.dart';
+import '../../../requests/cubit/requests_cubit.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../config/router/app_router.dart';
@@ -72,8 +79,20 @@ class MarketerProfileScreen extends StatelessWidget {
           // Bordered logout button — matches the Figma design for the
           // marketer flow, distinct from the client's plain text link.
           OutlinedButton.icon(
-            onPressed: () {
-              // TODO: wire up once auth/session handling is decided.
+            onPressed: () async {
+              final nav = Navigator.of(context);
+              final favorites = context.read<FavoritesCubit>();
+              final requests = context.read<RequestsCubit>();
+              final offers = context.read<OffersCubit>();
+              final mine = context.read<MyListingsCubit>();
+              final profile = context.read<ProfileCubit>();
+              await AuthRepository().logout();
+              favorites.clear();
+              requests.clear();
+              offers.clear();
+              mine.clear();
+              profile.clear();
+              nav.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
             },
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.error,
@@ -90,12 +109,29 @@ class MarketerProfileScreen extends StatelessWidget {
   }
 }
 
-class _MarketerProfileHeader extends StatelessWidget {
+class _MarketerProfileHeader extends StatefulWidget {
   const _MarketerProfileHeader();
 
   @override
+  State<_MarketerProfileHeader> createState() => _MarketerProfileHeaderState();
+}
+
+class _MarketerProfileHeaderState extends State<_MarketerProfileHeader> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<ProfileCubit>().load();
+    context.read<MyListingsCubit>().load(); // numbers in the stats row
+    context.read<OffersCubit>().load();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SectionCard(
+    final profile = context.watch<ProfileCubit>().state.selected;
+    final avatar = profile?.avatarUrl;
+    return Skeletonizer(
+      enabled: profile == null,
+      child: SectionCard(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       child: Column(
         children: [
@@ -111,7 +147,10 @@ class _MarketerProfileHeader extends StatelessWidget {
                   border: Border.all(color: AppColors.background, width: 4),
                   boxShadow: const [BoxShadow(color: AppColors.shadow, blurRadius: 2, offset: Offset(0, 1))],
                 ),
-                child: const Icon(Icons.person, size: 44, color: AppColors.primaryDark),
+                clipBehavior: Clip.antiAlias,
+                child: (avatar != null && avatar.isNotEmpty)
+                    ? Image.network(avatar, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 44, color: AppColors.primaryDark))
+                    : const Icon(Icons.person, size: 44, color: AppColors.primaryDark),
               ),
               PositionedDirectional(
                 bottom: 0,
@@ -129,20 +168,19 @@ class _MarketerProfileHeader extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          // Demo copy — will come from the account after login is wired up.
-           Text('أحمد محمود', style: AppTextStyles.heading2, textAlign: TextAlign.center),
+          Text((profile?.fullName.isNotEmpty ?? false) ? profile!.fullName : 'Loading name', style: AppTextStyles.heading2, textAlign: TextAlign.center),
           const SizedBox(height: 4),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.star, size: 15, color: AppColors.warning),
               const SizedBox(width: 4),
-              Text(LocaleKeys.profileRatingLabel.tr(args: ['4.8', '120']), style: AppTextStyles.bodyRegular),
+              Text(LocaleKeys.profileRatingLabel.tr(args: [(profile?.rating ?? 0).toStringAsFixed(1), '${profile?.reviewsCount ?? 0}']), style: AppTextStyles.bodyRegular),
             ],
           ),
         ],
       ),
-    );
+    ));
   }
 }
 
@@ -151,16 +189,23 @@ class _StatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Demo copy — will come from the account after the backend is wired up.
-    return Row(
+    final listingsState = context.watch<MyListingsCubit>().state;
+    final listings = listingsState.items.length;
+    final offersState = context.watch<OffersCubit>().state;
+    final offers = offersState.items;
+    final loading = (listingsState.isLoading && listings == 0) || (offersState.isLoading && offers.isEmpty);
+    final accepted = offers.where((o) => o.status == 'accepted').length;
+    return Skeletonizer(
+      enabled: loading,
+      child: Row(
       children: [
-        Expanded(child: _StatCard(value: '8', label: LocaleKeys.profileListingsLabel.tr())),
+        Expanded(child: _StatCard(value: '$listings', label: LocaleKeys.profileListingsLabel.tr())),
         const SizedBox(width: 8),
-        Expanded(child: _StatCard(value: '45', label: LocaleKeys.profileOffersSentLabel.tr())),
+        Expanded(child: _StatCard(value: '${offers.length}', label: LocaleKeys.profileOffersSentLabel.tr())),
         const SizedBox(width: 8),
-        Expanded(child: _StatCard(value: '12', label: LocaleKeys.profileDealsClosedLabel.tr())),
+        Expanded(child: _StatCard(value: '$accepted', label: LocaleKeys.profileDealsClosedLabel.tr())),
       ],
-    );
+    ));
   }
 }
 

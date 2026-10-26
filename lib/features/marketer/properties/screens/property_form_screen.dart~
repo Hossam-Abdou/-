@@ -1,29 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../../core/shared/widgets/app_back_button.dart';
-import '../../../../core/shared/widgets/app_primary_button.dart';
-import '../../../../core/shared/widgets/multi_image_picker_field.dart';
-import '../../../../core/shared/widgets/validated_text_field.dart';
+import '../../../../core/data/locations.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/network/api_error_text.dart';
+import '../../../../core/network/storage_service.dart';
+import '../../../../core/shared/widgets/buttons/app_back_button.dart';
+import '../../../../core/shared/widgets/buttons/app_primary_button.dart';
+import '../../../../core/shared/widgets/fields/multi_image_picker_field.dart';
+import '../../../../core/shared/widgets/fields/validated_text_field.dart';
 import '../../../../core/shared/widgets/property_type_chips.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
-import '../models/marketer_property.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../listings/models/listing_model.dart';
 
-/// Add-property and edit-property share this one form: when
-/// [existingProperty] is null it's add mode (empty fields, "Add
-/// Property" submit); when it's provided the fields are pre-filled
-/// and a delete option is shown ("Edit Property").
-///
-/// Submission is simulated: there's no backend yet, so this validates
-/// the form, shows a success dialog, and pops back — swap `_submit`
-/// for a real API call once [mockMarketerProperties] is replaced by a
-/// repository.
+/// Add-property and edit-property share this one form. In add mode it
+/// uploads the photos to Storage and creates the listing through the
+/// backend; with [existingId] the fields are pre-filled from the marketer's
+/// loaded listings and saving updates it (a delete option is shown).
 class PropertyFormScreen extends StatefulWidget {
-  final MarketerProperty? existingProperty;
+  final String? existingId;
 
-  const PropertyFormScreen({super.key, this.existingProperty});
+  const PropertyFormScreen({super.key, this.existingId});
 
   @override
   State<PropertyFormScreen> createState() => _PropertyFormScreenState();
@@ -32,33 +33,72 @@ class PropertyFormScreen extends StatefulWidget {
 class _PropertyFormScreenState extends State<PropertyFormScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleController;
-  late final TextEditingController _locationController;
   late final TextEditingController _areaController;
   late final TextEditingController _priceController;
+  late final TextEditingController _leaseController;
+  late final TextEditingController _roomsController;
+  late final TextEditingController _bathsController;
+  late final TextEditingController _descriptionController;
   late String _selectedType;
+  String _listingType = 'sale';
+  int? _cityId;
+  int? _districtId;
+  String? _cityError;
   List<String> _imagePaths = [];
+  List<String> _originalUrls = [];
   bool _submitting = false;
 
-  bool get _isEditMode => widget.existingProperty != null;
+  bool get _isEditMode => widget.existingId != null;
 
   @override
   void initState() {
     super.initState();
-    final p = widget.existingProperty;
-    _titleController = TextEditingController(text: p?.title ?? '');
-    _locationController = TextEditingController(text: p?.location ?? '');
-    _areaController = TextEditingController(text: p != null ? p.areaLabel.replaceAll(RegExp('[^0-9]'), '') : '');
-    _priceController = TextEditingController(text: p != null ? p.priceLabel.replaceAll(RegExp('[^0-9]'), '') : '');
-    _selectedType = p?.propertyType ?? propertyTypeOptions.first;
-    _imagePaths = List.of(p?.imagePaths ?? const []);
+    final l = widget.existingId == null
+        ? null
+        : context.read<MyListingsCubit>().state.items.where((e) => e.id == widget.existingId).firstOrNull;
+    String num(double? v) => v == null ? '' : (v == v.roundToDouble() ? v.toInt().toString() : v.toString());
+    _titleController = TextEditingController(text: l?.title ?? '');
+    _areaController = TextEditingController(text: num(l?.area));
+    _priceController = TextEditingController(text: num(l == null ? null : (l.isRent ? (l.rentMonthly ?? l.rentDaily) : l.price)));
+    _leaseController = TextEditingController(text: l?.leaseDurationMonths?.toString() ?? '');
+    _roomsController = TextEditingController(text: l?.rooms?.toString() ?? '');
+    _bathsController = TextEditingController(text: l?.bathrooms?.toString() ?? '');
+    _descriptionController = TextEditingController(text: l?.description ?? '');
+    _selectedType = l?.propertyType ?? propertyTypeOptions.first;
+    _listingType = l?.listingType ?? 'sale';
+    _cityId = l?.cityId;
+    _districtId = l?.districtId;
+    _imagePaths = [if (l != null) ...(l.images.isNotEmpty ? l.images : [if (l.coverImageUrl != null) l.coverImageUrl!])];
+    _originalUrls = List.of(_imagePaths);
+    // The list rows carry only the cover; fetch the full photo set for editing.
+    if (l != null) _loadDetails(l.id);
+  }
+
+  Future<void> _loadDetails(String id) async {
+    try {
+      final full = await context.read<MyListingsCubit>().listingsRepository.details(id);
+      if (!mounted) return;
+      setState(() {
+        if (full.images.isNotEmpty) {
+          _imagePaths = List.of(full.images);
+          _originalUrls = List.of(full.images);
+        }
+        if (_descriptionController.text.isEmpty) _descriptionController.text = full.description ?? '';
+      });
+    } on ApiException {
+      // keep what we have
+    }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _locationController.dispose();
     _areaController.dispose();
     _priceController.dispose();
+    _leaseController.dispose();
+    _roomsController.dispose();
+    _bathsController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -71,32 +111,125 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
     }
   }
 
+  /// Adds a photo by pasting its link instead of picking a file.
+  Future<void> _addImageByLink() async {
+    final controller = TextEditingController();
+    final link = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        String? error;
+        return StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: Text(LocaleKeys.propertyAddImageLink.tr(), style: AppTextStyles.heading4),
+            content: TextField(
+              controller: controller,
+              keyboardType: TextInputType.url,
+              autofocus: true,
+              // textDirection: TextDirection.LTR,
+              decoration: InputDecoration(hintText: LocaleKeys.propertyImageLinkHint.tr(), errorText: error, errorMaxLines: 2),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(LocaleKeys.cancelButton.tr())),
+              TextButton(
+                onPressed: () {
+                  final v = controller.text.trim();
+                  final uri = Uri.tryParse(v);
+                  if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https') || uri.host.isEmpty) {
+                    setLocal(() => error = LocaleKeys.propertyImageLinkInvalid.tr());
+                    return;
+                  }
+                  Navigator.of(dialogContext).pop(v);
+                },
+                child: Text(LocaleKeys.okButton.tr()),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    if (link != null && !_imagePaths.contains(link)) setState(() => _imagePaths.add(link));
+  }
+
   void _removeImageAt(int index) {
     setState(() => _imagePaths.removeAt(index));
   }
 
+  double? _num(TextEditingController c) => double.tryParse(c.text.trim().replaceAll(',', ''));
+  int? _int(TextEditingController c) => int.tryParse(c.text.trim());
+
+  void _snack(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    final valid = _formKey.currentState!.validate();
+    setState(() => _cityError = _cityId == null ? LocaleKeys.propertyCityRequired.tr() : null);
+    if (!valid || _cityId == null) return;
 
     setState(() => _submitting = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    final cubit = context.read<MyListingsCubit>();
+    final isRent = _listingType == 'rent';
+    final price = _num(_priceController);
+
+    // 1) photos -> Storage (already-uploaded URLs are kept)
+    List<String> urls;
+    try {
+      urls = await StorageService().uploadAll(
+        StorageService.propertyImages,
+        widget.existingId ?? 'new-${DateTime.now().millisecondsSinceEpoch}',
+        _imagePaths,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      _snack(e.status == null ? e.text : LocaleKeys.propertyUploadFailed.tr());
+      return;
+    }
+
+    // 2) the listing itself
+    bool ok;
+    if (_isEditMode) {
+      ok = await cubit.update(widget.existingId!, {
+        'title': _titleController.text.trim(),
+        'property_type': _selectedType,
+        'listing_type': _listingType,
+        'city_id': _cityId,
+        'district_id': _districtId,
+        'area': _num(_areaController),
+        'rooms': _int(_roomsController),
+        'bathrooms': _int(_bathsController),
+        'description': _descriptionController.text.trim(),
+        if (isRent) 'rent_monthly': price else 'price': price,
+        if (isRent) 'lease_duration_months': _int(_leaseController),
+      });
+      if (ok) {
+        final newUrls = [for (final u in urls) if (!_originalUrls.contains(u)) u];
+        if (newUrls.isNotEmpty) await cubit.addImages(widget.existingId!, newUrls);
+      }
+    } else {
+      ok = await cubit.create(ListingInput(
+        title: _titleController.text.trim(),
+        listingType: _listingType,
+        propertyType: _selectedType,
+        cityId: _cityId,
+        districtId: _districtId,
+        area: _num(_areaController),
+        rooms: _int(_roomsController),
+        bathrooms: _int(_bathsController),
+        price: isRent ? null : price,
+        rentMonthly: isRent ? price : null,
+        leaseDurationMonths: isRent ? _int(_leaseController) : null,
+        description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+        images: urls,
+      ));
+    }
     if (!mounted) return;
     setState(() => _submitting = false);
-
-    final property = MarketerProperty(
-      id: widget.existingProperty?.id ?? 'prop-${DateTime.now().millisecondsSinceEpoch}',
-      title: _titleController.text.trim(),
-      propertyType: _selectedType,
-      location: _locationController.text.trim(),
-      areaLabel: '${_areaController.text.trim()} م²',
-      priceLabel: '${_priceController.text.trim()} ج.م',
-      imagePaths: _imagePaths,
-    );
-    if (_isEditMode) {
-      updateMarketerProperty(property);
-    } else {
-      addMarketerProperty(property);
+    if (!ok) {
+      _snack(cubit.state.error?.text ?? LocaleKeys.apiErrGeneric.tr());
+      return;
     }
+    cubit.load(); // refresh covers / counts
 
     await showDialog<void>(
       context: context,
@@ -141,9 +274,16 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
       ),
     );
     if (confirmed == true) {
-      final id = widget.existingProperty?.id;
-      if (id != null) deleteMarketerProperty(id);
-      if (mounted) Navigator.of(context).pop();
+      final id = widget.existingId;
+      if (id == null) return;
+      final cubit = context.read<MyListingsCubit>();
+      final ok = await cubit.delete(id);
+      if (!mounted) return;
+      if (ok) {
+        Navigator.of(context).pop();
+      } else {
+        _snack(cubit.state.error?.text ?? LocaleKeys.apiErrGeneric.tr());
+      }
     }
   }
 
@@ -167,12 +307,32 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
                 onRemove: _removeImageAt,
                 label: LocaleKeys.propertyPhotoLabel.tr(),
               ),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: TextButton.icon(
+                  onPressed: _addImageByLink,
+                  icon: const Icon(Icons.link, size: 18),
+                  label: Text(LocaleKeys.propertyAddImageLink.tr()),
+                ),
+              ),
               const SizedBox(height: 20),
               ValidatedTextField(controller: _titleController, label: LocaleKeys.offerPropertyTitleLabel.tr()),
               const SizedBox(height: 16),
               PropertyTypeChips(selected: _selectedType, onChanged: (type) => setState(() => _selectedType = type)),
               const SizedBox(height: 16),
-              ValidatedTextField(controller: _locationController, label: LocaleKeys.propertyLocationLabel.tr()),
+              _ListingTypeChips(value: _listingType, onChanged: (v) => setState(() => _listingType = v)),
+              const SizedBox(height: 16),
+              _LocationPickers(
+                cityId: _cityId,
+                districtId: _districtId,
+                cityError: _cityError,
+                onCity: (v) => setState(() {
+                  _cityId = v;
+                  _districtId = null;
+                  _cityError = null;
+                }),
+                onDistrict: (v) => setState(() => _districtId = v),
+              ),
               const SizedBox(height: 16),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -182,9 +342,37 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: ValidatedTextField(controller: _priceController, label: LocaleKeys.propertyPriceLabel.tr(), keyboardType: TextInputType.number),
+                    child: ValidatedTextField(
+                      controller: _priceController,
+                      label: (_listingType == 'rent' ? LocaleKeys.propertyRentMonthlyLabel : LocaleKeys.propertyPriceLabel).tr(),
+                      keyboardType: TextInputType.number,
+                    ),
                   ),
                 ],
+              ),
+              if (_listingType == 'rent') ...[
+                const SizedBox(height: 16),
+                ValidatedTextField(controller: _leaseController, label: LocaleKeys.propertyLeaseMonthsLabel.tr(), keyboardType: TextInputType.number),
+              ],
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: ValidatedTextField(controller: _roomsController, label: LocaleKeys.specRooms.tr(), keyboardType: TextInputType.number, required: false),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ValidatedTextField(controller: _bathsController, label: LocaleKeys.specBathrooms.tr(), keyboardType: TextInputType.number, required: false),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ValidatedTextField(
+                controller: _descriptionController,
+                label: LocaleKeys.propertyDescriptionLabel.tr(),
+                maxLines: 4,
+                required: false,
               ),
               const SizedBox(height: 28),
               AppPrimaryButton(
@@ -215,3 +403,91 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
   }
 }
 
+
+class _ListingTypeChips extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _ListingTypeChips({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(String v, String label) {
+      final selected = value == v;
+      return ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onChanged(v),
+        selectedColor: AppColors.primary,
+        backgroundColor: AppColors.surface,
+        labelStyle: AppTextStyles.bodySmall.copyWith(color: selected ? Colors.white : AppColors.textPrimary),
+        side: BorderSide(color: selected ? AppColors.primary : AppColors.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        showCheckmark: false,
+      );
+    }
+
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 8,
+      children: [
+        chip('sale', LocaleKeys.listingForSale.tr()),
+        chip('rent', LocaleKeys.listingForRent.tr()),
+      ],
+    );
+  }
+}
+
+class _LocationPickers extends StatelessWidget {
+  final int? cityId;
+  final int? districtId;
+  final String? cityError;
+  final ValueChanged<int?> onCity;
+  final ValueChanged<int?> onDistrict;
+  const _LocationPickers({
+    required this.cityId,
+    required this.districtId,
+    required this.cityError,
+    required this.onCity,
+    required this.onDistrict,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = context.locale.languageCode;
+    final districts = cityId == null ? const <District>[] : Locations.districtsOf(cityId!);
+    InputDecoration deco(String hint, {String? error}) => InputDecoration(
+          hintText: hint,
+          errorText: error,
+          filled: true,
+          fillColor: AppColors.surface,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(LocaleKeys.cityLabel.tr(), style: AppTextStyles.bodySmall),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<int>(
+          value: cityId,
+          isExpanded: true,
+          decoration: deco(LocaleKeys.cityPlaceholder.tr(), error: cityError),
+          items: [for (final c in Locations.cities) DropdownMenuItem(value: c.id, child: Text(c.name(lang)))],
+          onChanged: onCity,
+        ),
+        const SizedBox(height: 16),
+        Text(LocaleKeys.districtLabel.tr(), style: AppTextStyles.bodySmall),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<int>(
+          key: ValueKey('district-$cityId'),
+          value: districtId,
+          isExpanded: true,
+          decoration: deco(LocaleKeys.districtPlaceholder.tr()),
+          items: [for (final d in districts) DropdownMenuItem(value: d.id, child: Text(d.name(lang)))],
+          onChanged: cityId == null ? null : onDistrict,
+        ),
+      ],
+    );
+  }
+}
+Test@123456

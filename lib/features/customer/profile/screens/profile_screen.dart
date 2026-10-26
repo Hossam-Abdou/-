@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:skeletonizer/skeletonizer.dart';
+import '../../../profile/cubit/profile_cubit.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../auth/data/auth_repository.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../requests/cubit/requests_cubit.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../config/router/app_router.dart';
@@ -93,8 +99,16 @@ class ProfileScreen extends StatelessWidget {
           // Plain text-style logout (no border) — matches the Figma design
           // for the client flow, distinct from the marketer's bordered button.
           TextButton.icon(
-            onPressed: () {
-              // TODO: wire up once auth/session handling is decided.
+            onPressed: () async {
+              final nav = Navigator.of(context);
+              final favorites = context.read<FavoritesCubit>();
+              final requests = context.read<RequestsCubit>();
+              final profile = context.read<ProfileCubit>();
+              await AuthRepository().logout();
+              favorites.clear();
+              requests.clear();
+              profile.clear();
+              nav.pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
             },
             icon: const Icon(Icons.logout, size: 18, color: AppColors.error),
             label: Text(LocaleKeys.profileLogout.tr(), style: AppTextStyles.heading4.copyWith(color: AppColors.error)),
@@ -105,12 +119,27 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-class _ProfileHeader extends StatelessWidget {
+class _ProfileHeader extends StatefulWidget {
   const _ProfileHeader();
 
   @override
+  State<_ProfileHeader> createState() => _ProfileHeaderState();
+}
+
+class _ProfileHeaderState extends State<_ProfileHeader> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<ProfileCubit>().load();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
+    final profile = context.watch<ProfileCubit>().state.selected;
+    final avatar = profile?.avatarUrl;
+    return Skeletonizer(
+      enabled: profile == null,
+      child: Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 24),
       decoration: BoxDecoration(
@@ -134,11 +163,17 @@ class _ProfileHeader extends StatelessWidget {
               border: Border.all(color: AppColors.surface, width: 4),
               boxShadow: const [BoxShadow(color: AppColors.shadow, blurRadius: 2, offset: Offset(0, 1))],
             ),
-            child: const Icon(Icons.person, size: 44, color: AppColors.primaryDark),
+            clipBehavior: Clip.antiAlias,
+            child: (avatar != null && avatar.isNotEmpty)
+                ? Image.network(avatar, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 44, color: AppColors.primaryDark))
+                : const Icon(Icons.person, size: 44, color: AppColors.primaryDark),
           ),
           const SizedBox(height: 12),
-          // Demo copy — will come from the account after login is wired up.
-           Text('سارة أحمد', style: AppTextStyles.heading1, textAlign: TextAlign.center),
+          Text(
+            (profile?.fullName.isNotEmpty ?? false) ? profile!.fullName : 'Loading name',
+            style: AppTextStyles.heading1,
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 4),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -150,6 +185,6 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 }

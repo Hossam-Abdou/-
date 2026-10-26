@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../../core/shared/widgets/date_time_label.dart';
 import '../models/marketer_request.dart';
 import '../../../../generated/locale_keys.g.dart';
 
@@ -35,8 +36,6 @@ class MarketerRequestCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.more_vert, color: AppColors.textMuted, size: 18),
-              const Spacer(),
               Expanded(
                 flex: 6,
                 child: Column(
@@ -59,6 +58,10 @@ class MarketerRequestCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(request.location, style: AppTextStyles.heading3, textAlign: TextAlign.start),
+                    if (request.createdAt != null) ...[
+                      const SizedBox(height: 4),
+                      DateTimeLabel(date: request.createdAt),
+                    ],
                     const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,

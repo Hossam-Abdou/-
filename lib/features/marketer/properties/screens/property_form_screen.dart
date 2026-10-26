@@ -1,29 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/shared/widgets/buttons/app_back_button.dart';
-import '../../../../core/shared/widgets/buttons/app_primary_button.dart';
-import '../../../../core/shared/widgets/fields/multi_image_picker_field.dart';
+import '../../../../core/shared/widgets/fields/app_number_field.dart';
 import '../../../../core/shared/widgets/fields/validated_text_field.dart';
-import '../../../../core/shared/widgets/property_type_chips.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
-import '../models/marketer_property.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../models/property_draft.dart';
+import '../widgets/delete_property_button.dart';
+import '../widgets/listing_type_chips.dart';
+import '../widgets/property_location_field.dart';
+import '../widgets/property_photos_field.dart';
+import '../widgets/property_type_field.dart';
+import '../widgets/property_visibility_switch.dart';
+import '../widgets/save_property_button.dart';
 
-/// Add-property and edit-property share this one form: when
-/// [existingProperty] is null it's add mode (empty fields, "Add
-/// Property" submit); when it's provided the fields are pre-filled
-/// and a delete option is shown ("Edit Property").
-///
-/// Submission is simulated: there's no backend yet, so this validates
-/// the form, shows a success dialog, and pops back — swap `_submit`
-/// for a real API call once [mockMarketerProperties] is replaced by a
-/// repository.
+/// Add-property and edit-property share this form ([existingId] null = add).
+/// The screen only lays out the form: every field is its own widget that
+/// writes into a [PropertyDraft], and the save / delete buttons do the work.
 class PropertyFormScreen extends StatefulWidget {
-  final MarketerProperty? existingProperty;
-
-  const PropertyFormScreen({super.key, this.existingProperty});
+  final String? existingId;
+  const PropertyFormScreen({super.key, this.existingId});
 
   @override
   State<PropertyFormScreen> createState() => _PropertyFormScreenState();
@@ -31,128 +30,19 @@ class PropertyFormScreen extends StatefulWidget {
 
 class _PropertyFormScreenState extends State<PropertyFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _titleController;
-  late final TextEditingController _locationController;
-  late final TextEditingController _areaController;
-  late final TextEditingController _priceController;
-  late String _selectedType;
-  List<String> _imagePaths = [];
-  bool _submitting = false;
+  late final PropertyDraft _draft = PropertyDraft.from(
+    widget.existingId == null ? null : context.read<MyListingsCubit>().state.items.where((e) => e.id == widget.existingId).firstOrNull,
+  );
 
-  bool get _isEditMode => widget.existingProperty != null;
-
-  @override
-  void initState() {
-    super.initState();
-    final p = widget.existingProperty;
-    _titleController = TextEditingController(text: p?.title ?? '');
-    _locationController = TextEditingController(text: p?.location ?? '');
-    _areaController = TextEditingController(text: p != null ? p.areaLabel.replaceAll(RegExp('[^0-9]'), '') : '');
-    _priceController = TextEditingController(text: p != null ? p.priceLabel.replaceAll(RegExp('[^0-9]'), '') : '');
-    _selectedType = p?.propertyType ?? propertyTypeOptions.first;
-    _imagePaths = List.of(p?.imagePaths ?? const []);
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _locationController.dispose();
-    _areaController.dispose();
-    _priceController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickImages() async {
-    // Gallery only — picking from the camera needs an extra Android
-    // manifest permission this project doesn't declare yet.
-    final picked = await ImagePicker().pickMultiImage(imageQuality: 80);
-    if (picked.isNotEmpty) {
-      setState(() => _imagePaths.addAll(picked.map((x) => x.path)));
-    }
-  }
-
-  void _removeImageAt(int index) {
-    setState(() => _imagePaths.removeAt(index));
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _submitting = true);
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    setState(() => _submitting = false);
-
-    final property = MarketerProperty(
-      id: widget.existingProperty?.id ?? 'prop-${DateTime.now().millisecondsSinceEpoch}',
-      title: _titleController.text.trim(),
-      propertyType: _selectedType,
-      location: _locationController.text.trim(),
-      areaLabel: '${_areaController.text.trim()} م²',
-      priceLabel: '${_priceController.text.trim()} ج.م',
-      imagePaths: _imagePaths,
-    );
-    if (_isEditMode) {
-      updateMarketerProperty(property);
-    } else {
-      addMarketerProperty(property);
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text(LocaleKeys.propertySavedSuccessTitle.tr(), style: AppTextStyles.heading4),
-          ],
-        ),
-        content: Text(
-          (_isEditMode ? LocaleKeys.propertyUpdatedSuccessDesc : LocaleKeys.propertyAddedSuccessDesc).tr(),
-          style: AppTextStyles.bodyRegular,
-          textAlign: TextAlign.start,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(LocaleKeys.okButton.tr())),
-        ],
-      ),
-    );
-    if (!mounted) return;
-    Navigator.of(context).pop();
-  }
-
-  Future<void> _confirmDelete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text(LocaleKeys.deletePropertyConfirmTitle.tr(), style: AppTextStyles.heading4),
-        content: Text(LocaleKeys.deletePropertyConfirmDesc.tr(), style: AppTextStyles.bodyRegular, textAlign: TextAlign.start),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(LocaleKeys.cancelButton.tr())),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(LocaleKeys.deletePropertyButton.tr(), style: const TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      final id = widget.existingProperty?.id;
-      if (id != null) deleteMarketerProperty(id);
-      if (mounted) Navigator.of(context).pop();
-    }
-  }
+  bool get _isEdit => widget.existingId != null;
 
   @override
   Widget build(BuildContext context) {
+    final isRent = _draft.isRent; // sale shows the price, rent shows rent + lease length
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text((_isEditMode ? LocaleKeys.editPropertyTitle : LocaleKeys.addPropertyTitle).tr(), style: AppTextStyles.heading3),
+        title: Text((_isEdit ? LocaleKeys.editPropertyTitle : LocaleKeys.addPropertyTitle).tr(), style: AppTextStyles.heading3),
         leading: const AppBackButton(),
       ),
       body: SafeArea(
@@ -161,51 +51,99 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
-              MultiImagePickerField(
-                imagePaths: _imagePaths,
-                onAdd: _pickImages,
-                onRemove: _removeImageAt,
-                label: LocaleKeys.propertyPhotoLabel.tr(),
+              PropertyPhotosField(draft: _draft, existingId: widget.existingId),
+              const SizedBox(height: 12),
+              ValidatedTextField(
+                initialValue: _draft.title,
+                onChanged: (v) => _draft.title = v,
+                label: LocaleKeys.offerPropertyTitleLabel.tr(),
+                hint: LocaleKeys.hintPropertyTitle.tr(),
               ),
-              const SizedBox(height: 20),
-              ValidatedTextField(controller: _titleController, label: LocaleKeys.offerPropertyTitleLabel.tr()),
               const SizedBox(height: 16),
-              PropertyTypeChips(selected: _selectedType, onChanged: (type) => setState(() => _selectedType = type)),
+              PropertyTypeField(draft: _draft),
               const SizedBox(height: 16),
-              ValidatedTextField(controller: _locationController, label: LocaleKeys.propertyLocationLabel.tr()),
+              ListingTypeChips(value: _draft.listingType, onChanged: (v) => setState(() => _draft.listingType = v)),
+              const SizedBox(height: 16),
+              PropertyLocationField(draft: _draft),
               const SizedBox(height: 16),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: ValidatedTextField(controller: _areaController, label: LocaleKeys.specArea.tr(), keyboardType: TextInputType.number),
+                    child: AppNumberField(
+                      initialValue: _draft.area,
+                      onChanged: (v) => _draft.area = v,
+                      label: LocaleKeys.specArea.tr(),
+                      hint: LocaleKeys.hintArea.tr(),
+                      unit: 'م²',
+                      allowDecimal: true,
+                    ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: ValidatedTextField(controller: _priceController, label: LocaleKeys.propertyPriceLabel.tr(), keyboardType: TextInputType.number),
+                    child: AppNumberField(
+                      key: ValueKey('price-$isRent'), // a fresh field when switching sale <-> rent
+                      initialValue: _draft.price,
+                      onChanged: (v) => _draft.price = v,
+                      label: (isRent ? LocaleKeys.propertyRentMonthlyLabel : LocaleKeys.propertyPriceLabel).tr(),
+                      hint: (isRent ? LocaleKeys.hintRent : LocaleKeys.hintPrice).tr(),
+                      allowDecimal: true,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
-              AppPrimaryButton(
-                label: (_isEditMode ? LocaleKeys.savePropertyButton : LocaleKeys.addPropertySubmit).tr(),
-                icon: Icons.check,
-                isLoading: _submitting,
-                onPressed: _submitting ? null : _submit,
-              ),
-              if (_isEditMode) ...[
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _confirmDelete,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: Text(LocaleKeys.deletePropertyButton.tr()),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.error,
-                    side: const BorderSide(color: AppColors.error),
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
+              if (isRent) ...[
+                const SizedBox(height: 16),
+                AppNumberField(
+                  initialValue: _draft.leaseMonths,
+                  onChanged: (v) => _draft.leaseMonths = v,
+                  label: LocaleKeys.propertyLeaseMonthsLabel.tr(),
+                  hint: LocaleKeys.hintLease.tr(),
                 ),
+              ],
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: AppNumberField(
+                      initialValue: _draft.rooms,
+                      onChanged: (v) => _draft.rooms = v,
+                      label: LocaleKeys.specRooms.tr(),
+                      hint: LocaleKeys.hintRooms.tr(),
+                      required: false,
+                      allowZero: true,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: AppNumberField(
+                      initialValue: _draft.bathrooms,
+                      onChanged: (v) => _draft.bathrooms = v,
+                      label: LocaleKeys.specBathrooms.tr(),
+                      hint: LocaleKeys.hintBaths.tr(),
+                      required: false,
+                      allowZero: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ValidatedTextField(
+                initialValue: _draft.description,
+                onChanged: (v) => _draft.description = v,
+                label: LocaleKeys.propertyDescriptionLabel.tr(),
+                hint: LocaleKeys.hintPropertyDescription.tr(),
+                maxLines: 4,
+                required: false,
+              ),
+              const SizedBox(height: 16),
+              PropertyVisibilitySwitch(draft: _draft),
+              const SizedBox(height: 28),
+              SavePropertyButton(formKey: _formKey, draft: _draft, existingId: widget.existingId),
+              if (_isEdit) ...[
+                const SizedBox(height: 12),
+                DeletePropertyButton(propertyId: widget.existingId!),
               ],
             ],
           ),
@@ -214,4 +152,3 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
     );
   }
 }
-

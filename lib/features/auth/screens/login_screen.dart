@@ -1,79 +1,185 @@
-import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
 import '../../../config/router/app_router.dart';
 import '../../../core/shared/widgets/buttons/app_primary_button.dart';
-import '../../../core/shared/widgets/fields/app_text_field.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../models/user_role.dart';
 import '../../../generated/locale_keys.g.dart';
+import '../cubit/auth_cubit.dart';
+import '../data/auth_repository.dart';
+import '../models/user_role.dart';
+import '../../../core/utils/validators.dart';
+import '../widgets/auth_extras.dart';
+import '../widgets/auth_field.dart';
+import '../widgets/auth_header.dart';
+import '../widgets/auth_role_widgets.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  Widget build(BuildContext context) {
+    return BlocProvider(create: (_) => AuthCubit(AuthRepository()), child: const _LoginView());
+  }
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _isLoading = false;
+class _LoginView extends StatefulWidget {
+  const _LoginView();
+
+  @override
+  State<_LoginView> createState() => _LoginViewState();
+}
+
+class _LoginViewState extends State<_LoginView> {
+  final _formKey = GlobalKey<FormState>();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin(UserRole role) async {
-    setState(() => _isLoading = true);
-    // TODO: wire up once the backend is decided — the backend will return
-    // the account's real role instead of relying on what was tapped here.
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    Navigator.pushReplacementNamed(
-      context,
-      role == UserRole.marketer ? AppRoutes.marketerRequests : AppRoutes.home,
-    );
+  void _submit() {
+    FocusScope.of(context).unfocus();
+    if (!_formKey.currentState!.validate()) return;
+    context.read<AuthCubit>().login(email: _email.text.trim(), password: _password.text);
+  }
+
+  String? _validateEmail(String? v) {
+    final t = (v ?? '').trim();
+    if (t.isEmpty) return LocaleKeys.authErrRequired.tr();
+    return Validators.isEmail(t) ? null : LocaleKeys.authErrIdentifier.tr();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Passed from RoleSelectionScreen; defaults to client if opened directly.
-    final role = (ModalRoute.of(context)?.settings.arguments as UserRole?) ?? UserRole.client;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 48),
-              Text(LocaleKeys.loginTitle.tr(), style: AppTextStyles.heading1, textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text(LocaleKeys.loginSubtitle.tr(), style: AppTextStyles.bodyRegular, textAlign: TextAlign.center),
-              const SizedBox(height: 32),
-              AppTextField(label: LocaleKeys.emailLabel.tr(), controller: _emailController, keyboardType: TextInputType.emailAddress),
-              const SizedBox(height: 16),
-              AppTextField(label: LocaleKeys.passwordLabel.tr(), controller: _passwordController, obscureText: true),
-              const SizedBox(height: 24),
-              AppPrimaryButton(label: LocaleKeys.loginButton.tr(), onPressed: () => _handleLogin(role), isLoading: _isLoading),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pushNamed(context, AppRoutes.register, arguments: role),
-                    child: Text(LocaleKeys.createAccountLabel.tr(), style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold)),
+    return BlocListener<AuthCubit, AuthState>(
+      listenWhen: (p, c) => p.status != c.status,
+      listener: (context, state) {
+        if (state.status == AuthStatus.success) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            state.role == UserRole.marketer ? AppRoutes.marketerRequests : AppRoutes.home,
+            (_) => false,
+          );
+        } else if (state.status == AuthStatus.failure) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(state.error!.text), backgroundColor: AppColors.error));
+        }
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AuthHeader(title: LocaleKeys.authBrand.tr(), subtitle: LocaleKeys.authLoginWelcome.tr()),
+                      const SizedBox(height: 22),
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [BoxShadow(color: AppColors.shadow, blurRadius: 16, offset: Offset(0, 6))],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            BlocSelector<AuthCubit, AuthState, UserRole>(
+                              selector: (state) => state.role,
+                              builder: (context, role) => Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  AuthRoleTabs(selected: role, onChanged: context.read<AuthCubit>().selectRole),
+                                  const SizedBox(height: 14),
+                                  AuthInfoBanner(
+                                    text: role == UserRole.client ? LocaleKeys.authLoginInfoClient.tr() : LocaleKeys.authLoginInfoMarketer.tr(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            AuthField(
+                              label: LocaleKeys.emailLabel.tr(),
+                              controller: _email,
+                              hint: LocaleKeys.authEmailHint.tr(),
+                              icon: Icons.mail_outline_rounded,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              validator: _validateEmail,
+                            ),
+                            const SizedBox(height: 16),
+                            AuthPasswordField(
+                              label: LocaleKeys.passwordLabel.tr(),
+                              controller: _password,
+                              hint: '••••••••',
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => _submit(),
+                              validator: (v) => (v ?? '').isEmpty ? LocaleKeys.authErrRequired.tr() : null,
+                              trailingLabel: GestureDetector(
+                                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(LocaleKeys.comingSoonTitle.tr())),
+                                ), // TODO: reset-password screen (POST /auth/reset-password)
+                                child: Text(
+                                  LocaleKeys.authForgotPassword.tr(),
+                                  style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            BlocSelector<AuthCubit, AuthState, bool>(
+                              selector: (state) => state.remember,
+                              builder: (context, remember) => AuthCheckRow(
+                                value: remember,
+                                onChanged: (_) => context.read<AuthCubit>().toggleRemember(),
+                                label: LocaleKeys.authRememberMe.tr(),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            BlocSelector<AuthCubit, AuthState, bool>(
+                              selector: (state) => state.status == AuthStatus.loading,
+                              builder: (context, loading) => AppPrimaryButton(
+                                label: LocaleKeys.loginButton.tr(),
+                                icon: context.locale.languageCode == 'ar' ? Icons.arrow_back_rounded : Icons.arrow_forward_rounded,
+                                isLoading: loading,
+                                onPressed: _submit,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(LocaleKeys.authNoAccount.tr(), style: AppTextStyles.bodySmall),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () => Navigator.pushNamed(context, AppRoutes.register, arguments: context.read<AuthCubit>().state.role),
+                            child: Text(
+                              LocaleKeys.authCreateNewAccount.tr(),
+                              style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  Text(LocaleKeys.noAccountLabel.tr(), style: AppTextStyles.bodySmall),
-                ],
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),

@@ -9,14 +9,24 @@ import '../cubit/bottom_bar_cubit.dart';
 /// / `MarketerBottomNavBarScreen` — this widget just wires the Cubit
 /// + Scaffold.
 ///
-/// Note: unlike the old IndexedStack version, only the active tab is
-/// built at a time, so switching tabs rebuilds that tab fresh (no
-/// kept-alive scroll position) — matches the requested pattern.
-class BottomBarScreen extends StatelessWidget {
+/// Tabs are built the first time they are opened and then kept alive
+/// (IndexedStack), so switching tabs does not reload their data; each tab
+/// has pull-to-refresh instead.
+class BottomBarScreen extends StatefulWidget {
   final List<Widget> layouts;
   final List<BottomNavigationBarItem> items;
 
   const BottomBarScreen({super.key, required this.layouts, required this.items});
+
+  @override
+  State<BottomBarScreen> createState() => _BottomBarScreenState();
+}
+
+class _BottomBarScreenState extends State<BottomBarScreen> {
+  final Set<int> _opened = {0};
+
+  List<Widget> get layouts => widget.layouts;
+  List<BottomNavigationBarItem> get items => widget.items;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +36,7 @@ class BottomBarScreen extends StatelessWidget {
         listener: (context, state) {},
         builder: (context, state) {
           final cubit = BottomBarCubit.get(context);
+          _opened.add(cubit.currentIndex);
           return PopScope(
             // Only pop the whole shell (e.g. back to role selection)
             // when already on the first tab; otherwise the back
@@ -37,7 +48,12 @@ class BottomBarScreen extends StatelessWidget {
               }
             },
             child: Scaffold(
-              body: layouts[cubit.currentIndex],
+              body: IndexedStack(
+                index: cubit.currentIndex,
+                children: [
+                  for (var i = 0; i < layouts.length; i++) _opened.contains(i) ? layouts[i] : const SizedBox.shrink(),
+                ],
+              ),
               bottomNavigationBar: BottomNavigationBar(
                 type: BottomNavigationBarType.fixed,
                 backgroundColor: AppColors.surface,

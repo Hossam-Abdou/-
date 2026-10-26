@@ -6,6 +6,12 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
 
 class TopBar extends StatelessWidget {
+  /// Text on the location chip (the chosen area) and what happens on tap.
+  final String? locationLabel;
+  final VoidCallback? onLocationTap;
+
+  const TopBar({super.key, this.locationLabel, this.onLocationTap});
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -20,19 +26,23 @@ class TopBar extends StatelessWidget {
             Text(LocaleKeys.homeSubtitle.tr(), style: AppTextStyles.bodyRegular, overflow: TextOverflow.ellipsis),
           ],
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            children:  [
-              Icon(Icons.expand_more, size: 14, color: AppColors.textSecondary),
-              SizedBox(width: 4),
-              Text('القاهرة', style: AppTextStyles.bodySmall),
-            ],
+        InkWell(
+          onTap: onLocationTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.expand_more, size: 14, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Text(locationLabel ?? LocaleKeys.locationAll.tr(), style: AppTextStyles.bodySmall),
+              ],
+            ),
           ),
         ),
         const SizedBox(width: 8),

@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../../core/shared/widgets/app_property_image.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 
-/// Shows a property's cover photo from its local file path, or a
+/// Shows a property's cover photo (a link or a local file path), or a
 /// placeholder icon when none has been picked yet. Used by the
 /// property list, the offer property-picker, and the property form.
 ///
@@ -36,15 +36,8 @@ class PropertyImageThumbnail extends StatelessWidget {
             color: AppColors.primaryLight,
             alignment: Alignment.center,
             child: path != null && path.isNotEmpty
-                ? Image.file(
-                    File(path),
-                    width: size,
-                    height: size,
-                    fit: BoxFit.cover,
-                    // Local file may have been cleared (cache/temp dir) —
-                    // fall back to the placeholder instead of crashing.
-                    errorBuilder: (context, error, stackTrace) => Icon(Icons.home_work_outlined, color: AppColors.primaryDark, size: size * 0.4),
-                  )
+                // a link (uploaded photo) or a local file (just picked)
+                ? AppPropertyImage(path: path, width: size, height: size)
                 : Icon(Icons.home_work_outlined, color: AppColors.primaryDark, size: size * 0.4),
           ),
         ),

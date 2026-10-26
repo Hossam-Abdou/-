@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../../core/shared/widgets/date_time_label.dart';
 import '../models/property_request.dart';
 import '../../requests/widgets/request_status_badge.dart';
 import '../../../../generated/locale_keys.g.dart';
@@ -64,6 +65,10 @@ class RequestCard extends StatelessWidget {
                   Text(request.title, style: AppTextStyles.heading3, textAlign: TextAlign.start),
                   const SizedBox(height: 4),
                   Text(request.location, style: AppTextStyles.bodySmall, textAlign: TextAlign.start),
+                  if (request.createdAt != null) ...[
+                    const SizedBox(height: 4),
+                    DateTimeLabel(date: request.createdAt),
+                  ],
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,

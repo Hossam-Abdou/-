@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/network/api_error_text.dart';
+import '../../../../core/shared/widgets/app_snack_bar.dart';
+import '../../../profile/cubit/profile_cubit.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../../../../core/shared/widgets/buttons/app_back_button.dart';
 import '../../../../core/shared/widgets/buttons/app_primary_button.dart';
@@ -7,12 +11,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
 
-/// Edit-personal-details screen for the client account. Demo data is
-/// pre-filled to match the mock name shown on the Profile tab header
-/// — swap for a real account fetch once the backend is wired up.
-///
-/// Submission is simulated (no backend yet): validates the form,
-/// shows a success dialog, and pops back.
+/// Edit-personal-details screen for the client account, filled from the
+/// real profile and saved through [ProfileCubit]. The email is shown but
+/// can't be changed here (it is the login).
 class MyInformationScreen extends StatefulWidget {
   const MyInformationScreen({super.key});
 
@@ -22,10 +23,27 @@ class MyInformationScreen extends StatefulWidget {
 
 class _MyInformationScreenState extends State<MyInformationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController(text: 'سارة أحمد');
-  final _emailController = TextEditingController(text: 'sara.ahmed@example.com');
-  final _phoneController = TextEditingController(text: '01012345678');
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final cubit = context.read<ProfileCubit>();
+    _fill(cubit.state.selected);
+    cubit.load().then((_) {
+      if (mounted) _fill(cubit.state.selected);
+    });
+  }
+
+  void _fill(profile) {
+    if (profile == null) return;
+    _nameController.text = profile.fullName;
+    _emailController.text = profile.email ?? '';
+    _phoneController.text = profile.phone ?? '';
+  }
 
   @override
   void dispose() {
@@ -38,10 +56,15 @@ class _MyInformationScreenState extends State<MyInformationScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final cubit = context.read<ProfileCubit>();
     setState(() => _submitting = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    final ok = await cubit.update(fullName: _nameController.text.trim(), phone: _phoneController.text.trim());
     if (!mounted) return;
     setState(() => _submitting = false);
+    if (!ok) {
+      showAppSnackBar(context, cubit.state.error!.text, isError: true);
+      return;
+    }
 
     await showDialog<void>(
       context: context,
@@ -81,7 +104,7 @@ class _MyInformationScreenState extends State<MyInformationScreen> {
             children: [
               ValidatedTextField(controller: _nameController, label: LocaleKeys.fullNameLabel.tr()),
               const SizedBox(height: 16),
-              ValidatedTextField(controller: _emailController, label: LocaleKeys.emailLabel.tr(), keyboardType: TextInputType.emailAddress),
+              ValidatedTextField(controller: _emailController, label: LocaleKeys.emailLabel.tr(), keyboardType: TextInputType.emailAddress, readOnly: true),
               const SizedBox(height: 16),
               ValidatedTextField(controller: _phoneController, label: LocaleKeys.phoneLabel.tr(), keyboardType: TextInputType.phone),
               const SizedBox(height: 28),

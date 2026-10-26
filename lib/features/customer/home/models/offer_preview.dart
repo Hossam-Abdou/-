@@ -10,6 +10,8 @@ enum OfferStatus { pending, accepted, declined }
 /// Demo copy only — will come from the backend later.
 class OfferPreview {
   final String id;
+  final String? marketerId; // backend profile id, used to start a chat
+  final String? requestId; // the request it answers, so its chat is about that request
   final String marketerName;
   final double rating;
   final int reviewsCount;
@@ -28,6 +30,8 @@ class OfferPreview {
 
   const OfferPreview({
     required this.id,
+    this.marketerId,
+    this.requestId,
     required this.marketerName,
     required this.rating,
     required this.reviewsCount,
@@ -41,6 +45,8 @@ class OfferPreview {
   OfferPreview copyWith({OfferStatus? status}) {
     return OfferPreview(
       id: id,
+      marketerId: marketerId,
+      requestId: requestId,
       marketerName: marketerName,
       rating: rating,
       reviewsCount: reviewsCount,
@@ -119,6 +125,12 @@ OfferPreview? findOfferPreviewById(String? id) {
     }
   }
   return null;
+}
+
+/// Replaces the offers shown for [requestId] with the ones loaded from the
+/// server, so the offer details screen can find them by id.
+void setOfferPreviews(String requestId, List<OfferPreview> offers) {
+  _mockOfferPreviewsByRequestId[requestId] = List.of(offers);
 }
 
 /// Appends a newly-sent offer to a request's preview list — called

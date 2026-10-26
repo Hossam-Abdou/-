@@ -5,6 +5,7 @@ enum MarketerRequestStatus { none, offerSent }
 /// Demo copy only — will come from the backend later.
 class MarketerRequest {
   final String id;
+  final String customerId;
   final String customerName;
   final String propertyType;
   final String location;
@@ -14,6 +15,7 @@ class MarketerRequest {
   final String budgetRange;
   final String description;
   final MarketerRequestStatus status;
+  final DateTime? createdAt;
 
   /// Id of the existing conversation with this customer, if one has
   /// already started (see [features/marketer/messages]) — null means
@@ -28,6 +30,7 @@ class MarketerRequest {
 
   const MarketerRequest({
     required this.id,
+    this.customerId = '',
     required this.customerName,
     required this.propertyType,
     required this.location,
@@ -37,50 +40,16 @@ class MarketerRequest {
     required this.budgetRange,
     this.description = '',
     this.status = MarketerRequestStatus.none,
+    this.createdAt,
     this.conversationId,
     this.linkedCustomerRequestId,
   });
 }
 
-const List<MarketerRequest> mockMarketerRequests = [
-  MarketerRequest(
-    id: 'mreq-1',
-    customerName: 'محمد عبد الله',
-    propertyType: 'شقة',
-    location: 'التجمع الخامس، القاهرة الجديدة',
-    bedsLabel: '3 غرف',
-    bathsLabel: '2 حمام',
-    areaLabel: '150-180 م²',
-    budgetRange: '3 - 5 مليون ج.م',
-    description: 'عميل جاهز للشراء الفوري، يفضل تشطيب سوبر لوكس ودور مرتفع، ومتاح للمعاينة خلال هذا الأسبوع.',
-    conversationId: 'mconv-1',
-    linkedCustomerRequestId: 'req-1',
-  ),
-  MarketerRequest(
-    id: 'mreq-2',
-    customerName: 'ياسمين خالد',
-    propertyType: 'فيلا',
-    location: 'الرحاب، القاهرة الجديدة',
-    bedsLabel: '4+ غرف',
-    bathsLabel: '4 حمام',
-    areaLabel: '250+ م²',
-    budgetRange: '8 - 12 مليون ج.م',
-    description: 'عميل يبحث عن فيلا مستقلة بحديقة، ميزانية مرنة لو العقار مطابق للمواصفات، تم إرسال عرض بالفعل.',
-    status: MarketerRequestStatus.offerSent,
-    conversationId: 'mconv-2',
-  ),
-  MarketerRequest(
-    id: 'mreq-3',
-    customerName: 'كريم عادل',
-    propertyType: 'دوبلكس',
-    location: 'مدينتي، القاهرة',
-    bedsLabel: '3 غرف',
-    bathsLabel: '3 حمام',
-    areaLabel: '180-220 م²',
-    budgetRange: '4.5 - 6 مليون ج.م',
-    description: 'مطلوب دوبلكس بحالة جيدة في مدينتي، يفضل قرب من البوابة الرئيسية والخدمات.',
-  ),
-];
+/// Cache of the requests the marketer screens show. It is refilled from
+/// the backend by `syncMarketerRequests` (see marketer_request_mapper.dart),
+/// so the existing cards/search/details keep reading from one list.
+final List<MarketerRequest> mockMarketerRequests = [];
 
 /// Simple in-memory lookup — replace with a repository call once the
 /// backend is wired up.

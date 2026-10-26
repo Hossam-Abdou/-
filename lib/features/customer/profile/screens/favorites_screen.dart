@@ -4,12 +4,15 @@ import '../../../../core/shared/widgets/buttons/app_back_button.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
-import '../models/saved_property.dart';
-import '../widgets/saved_property_card.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../config/router/app_router.dart';
+import '../../../../core/shared/cubit/api_state.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../listings/models/listing_model.dart';
+import '../../../listings/widgets/listings_message.dart';
+import '../../home/widgets/listing_card.dart';
 
-/// Shows the customer's saved/favorited properties. Starts from
-/// [mockSavedProperties] and removes locally on tap — swap for a
-/// repository call once the backend is wired up.
+/// The customer's saved listings, from the app-wide [FavoritesCubit].
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
 
@@ -18,7 +21,11 @@ class FavoritesScreen extends StatefulWidget {
 }
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
-  final List<SavedProperty> _favorites = List.of(mockSavedProperties);
+  @override
+  void initState() {
+    super.initState();
+    context.read<FavoritesCubit>().load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,22 +36,27 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         leading: const AppBackButton(),
       ),
       body: SafeArea(
-        child: _favorites.isEmpty
-            ? _EmptyState()
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                children: _favorites
-                    .map(
-                      (p) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: SavedPropertyCard(
-                          property: p,
-                          onRemove: () => setState(() => _favorites.remove(p)),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
+        child: BlocBuilder<FavoritesCubit, ApiState<ListingModel>>(
+          builder: (context, state) {
+            if (state.items.isEmpty && state.status != ApiStatus.failure && !state.isLoading) {
+              return _EmptyState();
+            }
+            final message = ListingsMessage.of(state, () => context.read<FavoritesCubit>().load());
+            if (message != null) return SingleChildScrollView(child: message);
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              itemCount: state.items.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 16),
+              itemBuilder: (context, i) {
+                final l = state.items[i];
+                return ListingCard(
+                  listing: l,
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.listingDetails, arguments: l.id),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

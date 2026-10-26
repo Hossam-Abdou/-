@@ -5,6 +5,8 @@ import '../../../../core/shared/cubit/locale_cubit.dart';
 import '../../../../core/shared/widgets/bottom_bar_screen.dart';
 import '../../../../core/shared/widgets/place_holders/placeholder_tab_content.dart';
 import '../../../../generated/locale_keys.g.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../listings/data/listings_repository.dart';
 import '../../messages/screens/chat_list_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 import '../../requests/screens/my_requests_screen.dart';
@@ -27,6 +29,17 @@ class ClientBottomNavBar extends StatelessWidget {
     // current language) the moment `LocaleCubit` changes.
     context.watch<LocaleCubit>();
 
+    // The home tab's listings (and its chosen location) live in this cubit.
+    return BlocProvider(
+      create: (ctx) {
+        ctx.read<FavoritesCubit>().load(); // so the hearts show the right state
+        return ListingsCubit(ListingsRepository())..load();
+      },
+      child: _tabs(),
+    );
+  }
+
+  Widget _tabs() {
     return BottomBarScreen(
       layouts: [
         const HomeScreen(),

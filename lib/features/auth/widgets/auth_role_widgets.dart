@@ -1,0 +1,135 @@
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../generated/locale_keys.g.dart';
+import '../models/user_role.dart';
+
+/// Segmented "Property seeker | Marketer" switch. A white pill slides between
+/// the two halves (one animated widget), so switching stays smooth.
+class AuthRoleTabs extends StatelessWidget {
+  const AuthRoleTabs({super.key, required this.selected, required this.onChanged});
+  final UserRole selected;
+  final ValueChanged<UserRole> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final isClient = selected == UserRole.client;
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: const Color(0xFFEDEFF2), borderRadius: BorderRadius.circular(14)),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            alignment: isClient ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
+            child: FractionallySizedBox(
+              widthFactor: 0.5,
+              heightFactor: 1,
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(11)),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(child: _tab(UserRole.client, Icons.person_outline_rounded, LocaleKeys.authRoleClient.tr(), isClient)),
+              Expanded(child: _tab(UserRole.marketer, Icons.work_outline_rounded, LocaleKeys.authRoleMarketer.tr(), !isClient)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tab(UserRole role, IconData icon, String label, bool on) {
+    final color = on ? AppColors.primary : AppColors.textSecondary;
+    return InkWell(
+      borderRadius: BorderRadius.circular(11),
+      onTap: () => onChanged(role),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.bodySmall.copyWith(color: color, fontWeight: on ? FontWeight.w800 : FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Selectable "account type" card on Sign Up.
+class AuthRoleCard extends StatelessWidget {
+  const AuthRoleCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primaryLight : AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? AppColors.primary : AppColors.border, width: selected ? 1.6 : 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary : const Color(0xFFF1F3F5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 22, color: selected ? Colors.white : AppColors.textSecondary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppTextStyles.heading4.copyWith(color: selected ? AppColors.primaryDark : AppColors.textPrimary)),
+                  const SizedBox(height: 2),
+                  Text(description, style: AppTextStyles.caption.copyWith(height: 1.5)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+              color: selected ? AppColors.primary : AppColors.border,
+              size: 24,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

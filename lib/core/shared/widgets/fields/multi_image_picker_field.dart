@@ -1,6 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import '../app_property_image.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
@@ -72,19 +72,8 @@ class _PickedImageTile extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: Image.file(
-            File(path),
-            width: 110,
-            height: 110,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => Container(
-              width: 110,
-              height: 110,
-              color: AppColors.surface,
-              alignment: Alignment.center,
-              child: const Icon(Icons.broken_image_outlined, color: AppColors.textMuted),
-            ),
-          ),
+          // Works for both local files and http(s) links.
+          child: AppPropertyImage(path: path, width: 110, height: 110),
         ),
         PositionedDirectional(
           top: 4,

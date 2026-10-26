@@ -20,6 +20,7 @@ class PropertyRequest {
   final bool isNew;
   final PropertyRequestStatus status;
   final int offersCount;
+  final DateTime? createdAt;
 
   const PropertyRequest({
     required this.id,
@@ -35,6 +36,7 @@ class PropertyRequest {
     this.isNew = false,
     this.status = PropertyRequestStatus.open,
     this.offersCount = 0,
+    this.createdAt,
   });
 
   PropertyRequest copyWith({
@@ -62,6 +64,7 @@ class PropertyRequest {
       isNew: isNew,
       status: status,
       offersCount: offersCount,
+      createdAt: createdAt,
     );
   }
 }

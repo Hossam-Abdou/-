@@ -4,13 +4,13 @@ import '../../core/shared/screens/about_us_screen.dart';
 import '../../core/shared/widgets/place_holders/placeholder_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
-import '../../features/auth/screens/role_selection_screen.dart';
 import '../../features/customer/home/models/property_request.dart';
 import '../../features/customer/home/models/offer_preview.dart';
 import '../../features/customer/home/screens/client_bottom_nav_bar_screen.dart';
 import '../../features/customer/home/screens/offer_details_screen.dart';
 import '../../features/customer/home/screens/request_details_screen.dart';
 import '../../features/customer/home/screens/search_screen.dart';
+import '../../features/listings/screens/listing_details_screen.dart';
 import '../../features/customer/messages/models/conversation.dart' as customer_msg;
 import '../../features/customer/profile/screens/favorites_screen.dart';
 import '../../features/customer/profile/screens/my_information_screen.dart';
@@ -22,7 +22,6 @@ import '../../features/marketer/messages/models/conversation.dart' as marketer_m
 import '../../features/marketer/messages/screens/marketer_chat_list_screen.dart';
 import '../../features/marketer/messages/screens/marketer_chat_thread_screen.dart';
 import '../../features/marketer/profile/screens/my_information_screen.dart';
-import '../../features/marketer/properties/models/marketer_property.dart';
 import '../../features/marketer/properties/screens/my_properties_screen.dart';
 import '../../features/marketer/properties/screens/property_form_screen.dart';
 import '../../features/marketer/main_layout/models/marketer_request.dart';
@@ -39,16 +38,17 @@ import '../../features/subscriptions/screens/upgrade_screen.dart';
 /// `ModalRoute.of(context)!.settings.arguments`.
 class AppRoutes {
   AppRoutes._();
-  static const roleSelection = '/';
   static const aboutUs = '/about-us';
 
-  static const login = '/login'; // arguments: UserRole (from role selection)
-  static const register = '/register'; // arguments: UserRole
+  static const login = '/login';
+  static const register = '/register';
+  static const forgotPassword = '/forgot-password';
 
   static const home = '/home';
   static const search = '/search';
   static const requestsTracking = '/main_layout';
   static const requestDetails = '/request-details'; // arguments: requestId
+  static const listingDetails = '/listing-details'; // arguments: listingId
   static const editRequest = '/main_layout/edit'; // arguments: requestId
   static const createRequestLocation = '/main_layout/create/location';
   static const createRequestPropertyType = '/main_layout/create/property-type';
@@ -87,16 +87,17 @@ class AppRoutes {
 /// back from `settings.arguments` themselves.
 final Map<String, WidgetBuilder> _simpleRoutes = {
 
-  AppRoutes.roleSelection: (_) => const RoleSelectionScreen(),
+  '/': (_) => const LoginScreen(),
   AppRoutes.login: (_) => const LoginScreen(),
   AppRoutes.register: (_) => const RegisterScreen(),
+  // AppRoutes.forgotPassword: (_) => const ForgotPasswordScreen(),
   AppRoutes.upgrade: (_) => const UpgradeScreen(),
 
   // --- Client flow: real screens ---
   AppRoutes.home: (_) => const ClientBottomNavBar(),
   AppRoutes.search: (_) => const SearchScreen(),
   AppRoutes.requestsTracking: (_) => const MyRequestsScreen(),
-  AppRoutes.chatList: (_) => const ChatListScreen(),
+  AppRoutes.chatList: (_) => const Scaffold(body: ChatListScreen()),
 
   // --- Client flow: not built yet ---
   AppRoutes.createRequestLocation: (_) => const AddEditRequestScreen(),
@@ -113,7 +114,7 @@ final Map<String, WidgetBuilder> _simpleRoutes = {
   // --- Marketer flow: real screens ---
   AppRoutes.marketerRequests: (_) => const MarketerBottomNavBarScreen(),
   AppRoutes.marketerSearch: (_) => const MarketerSearchScreen(),
-  AppRoutes.marketerChat: (_) => const MarketerChatListScreen(),
+  AppRoutes.marketerChat: (_) => const Scaffold(body: MarketerChatListScreen()),
   AppRoutes.aboutUs: (_) => const AboutUsScreen(),
 
   // --- Marketer flow: not built yet ---
@@ -130,6 +131,8 @@ Widget? _buildArgumentRoute(RouteSettings settings) {
   final id = settings.arguments is String ? settings.arguments as String : null;
 
   switch (settings.name) {
+    case AppRoutes.listingDetails:
+      return id != null ? ListingDetailsScreen(listingId: id) : null;
     case AppRoutes.requestDetails:
       final request = findPropertyRequestById(id);
       return request != null
@@ -164,10 +167,9 @@ Widget? _buildArgumentRoute(RouteSettings settings) {
           ? MarketerChatThreadScreen(conversation: conversation)
           : PlaceholderScreen(title: 'المحادثة${id != null ? ' #$id' : ''}');
     case AppRoutes.marketerEditProperty:
-      final property = findMarketerPropertyById(id);
-      return property != null
-          ? PropertyFormScreen(existingProperty: property)
-          : PlaceholderScreen(title: 'تعديل العقار${id != null ? ' #$id' : ''}');
+      return id != null
+          ? PropertyFormScreen(existingId: id)
+          : PlaceholderScreen(title: 'تعديل العقار');
     default:
       return null;
   }

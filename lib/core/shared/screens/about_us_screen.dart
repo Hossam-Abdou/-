@@ -5,6 +5,7 @@ import '../../theme/app_text_styles.dart';
 import '../../../generated/locale_keys.g.dart';
 import '../widgets/buttons/app_back_button.dart';
 import '../widgets/section_card.dart';
+import '../../../features/auth/widgets/auth_header.dart';
 
 
 /// "من نحن" — the same About screen for both the customer and
@@ -32,15 +33,9 @@ class AboutUsScreen extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  Container(
-                    width: 84,
-                    height: 84,
-                    alignment: Alignment.center,
-                    decoration: const BoxDecoration(color: AppColors.primaryLight, shape: BoxShape.circle),
-                    child: const Icon(Icons.apartment, size: 40, color: AppColors.primaryDark),
-                  ),
+                  const AuthLogo(size: 96),
                   const SizedBox(height: 12),
-                  Text('PropertySeeker', style: AppTextStyles.heading1),
+                  Text(LocaleKeys.appName.tr(), style: AppTextStyles.heading1),
                   const SizedBox(height: 4),
                   Text(
                     LocaleKeys.aboutUsVersionLabel.tr(args: [_appVersion]),
@@ -61,6 +56,21 @@ class AboutUsScreen extends StatelessWidget {
                     style: AppTextStyles.bodyRegular.copyWith(color: AppColors.textPrimary, height: 1.6),
                     textAlign: TextAlign.start,
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            SectionCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(LocaleKeys.aboutUsFeaturesTitle.tr(), style: AppTextStyles.heading4),
+                  const SizedBox(height: 12),
+                  _Feature(icon: Icons.edit_note, title: LocaleKeys.aboutUsFeature1Title.tr(), desc: LocaleKeys.aboutUsFeature1Desc.tr()),
+                  const SizedBox(height: 12),
+                  _Feature(icon: Icons.local_offer_outlined, title: LocaleKeys.aboutUsFeature2Title.tr(), desc: LocaleKeys.aboutUsFeature2Desc.tr()),
+                  const SizedBox(height: 12),
+                  _Feature(icon: Icons.forum_outlined, title: LocaleKeys.aboutUsFeature3Title.tr(), desc: LocaleKeys.aboutUsFeature3Desc.tr()),
                 ],
               ),
             ),
@@ -110,6 +120,39 @@ class _InfoRow extends StatelessWidget {
           Text(value, style: AppTextStyles.bodyRegular.copyWith(color: AppColors.textPrimary), ),
         ],
       ),
+    );
+  }
+}
+
+class _Feature extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String desc;
+  const _Feature({required this.icon, required this.title, required this.desc});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: const BoxDecoration(color: AppColors.primaryLight, shape: BoxShape.circle),
+          child: Icon(icon, size: 18, color: AppColors.primaryDark),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: AppTextStyles.heading4),
+              const SizedBox(height: 2),
+              Text(desc, style: AppTextStyles.bodySmall),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

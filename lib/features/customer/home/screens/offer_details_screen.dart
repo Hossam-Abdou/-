@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../requests/cubit/requests_cubit.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../../../../config/router/app_router.dart';
 import '../../../../core/shared/widgets/buttons/app_back_button.dart';
@@ -7,7 +9,14 @@ import '../../../../core/shared/widgets/section_card.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
-import '../../messages/models/conversation.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/network/api_error_text.dart';
+import '../../../chat/cubit/chat_cubits.dart';
+import '../../../chat/data/chat_repository.dart';
+import '../../../chat/models/chat_models.dart';
+import '../../../chat/screens/chat_room_screen.dart';
+import '../../../offers/cubit/offers_cubit.dart';
+import '../../../offers/data/offers_repository.dart';
 import '../models/offer_preview.dart';
 import '../widgets/offer_status_badge.dart';
 
@@ -34,9 +43,44 @@ class OfferDetailsScreen extends StatefulWidget {
 class _OfferDetailsScreenState extends State<OfferDetailsScreen> {
   late OfferStatus _status = widget.offer.status;
 
-  void _sendMessage(BuildContext context) {
-    final conversation = findOrCreateConversationWithMarketer(widget.offer.marketerName, relatedRequestTitle: widget.offer.propertyTitle);
-    Navigator.pushNamed(context, AppRoutes.chatThread, arguments: conversation.id);
+  final OffersCubit _offers = OffersCubit(OffersRepository());
+
+  @override
+  void dispose() {
+    _offers.close();
+    super.dispose();
+  }
+
+  /// Accepting closes the request and declines the other offers on the server;
+  /// reload so the request screens show that right away.
+  void _refreshRequests() {
+    final requests = context.read<RequestsCubit>();
+    final openId = requests.state.selected?.id;
+    requests.load();
+    if (openId != null) requests.open(openId);
+  }
+
+  void _showError(Object? error) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error is ApiException ? error.text : ''), backgroundColor: AppColors.error),
+    );
+  }
+
+  /// Opens (or creates) the chat with this marketer.
+  Future<void> _sendMessage(BuildContext context) async {
+    final id = widget.offer.marketerId;
+    if (id == null) return;
+    final chat = ChatCubit(ChatRepository());
+    final ok = await chat.start(id, relatedRequestId: widget.offer.requestId);
+    final conversation = chat.state.selected;
+    final error = chat.state.error;
+    await chat.close();
+    if (!mounted) return;
+    if (ok && conversation != null) {
+      openChatRoom(context, conversation, title: widget.offer.marketerName);
+    } else {
+      _showError(error);
+    }
   }
 
   Future<void> _accept() async {
@@ -56,9 +100,17 @@ class _OfferDetailsScreenState extends State<OfferDetailsScreen> {
       ),
     );
     if (confirmed != true) return;
-    updateOfferStatus(widget.offer.id, OfferStatus.accepted);
+    final ok = await _offers.accept(widget.offer.id);
     if (!mounted) return;
+    if (!ok) return _showError(_offers.state.error);
+    updateOfferStatus(widget.offer.id, OfferStatus.accepted);
+    _refreshRequests();
     setState(() => _status = OfferStatus.accepted);
+    // Accepting opens a chat with the marketer — go straight to it.
+    final conversationId = _offers.lastConversationId;
+    if (conversationId != null) {
+      openChatRoom(context, ConversationModel(id: conversationId), title: widget.offer.marketerName);
+    }
   }
 
   Future<void> _decline() async {
@@ -78,8 +130,11 @@ class _OfferDetailsScreenState extends State<OfferDetailsScreen> {
       ),
     );
     if (confirmed != true) return;
-    updateOfferStatus(widget.offer.id, OfferStatus.declined);
+    final ok = await _offers.decline(widget.offer.id);
     if (!mounted) return;
+    if (!ok) return _showError(_offers.state.error);
+    updateOfferStatus(widget.offer.id, OfferStatus.declined);
+    _refreshRequests();
     setState(() => _status = OfferStatus.declined);
   }
 

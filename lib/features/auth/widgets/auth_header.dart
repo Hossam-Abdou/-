@@ -1,0 +1,93 @@
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../core/shared/cubit/locale_cubit.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+
+/// Header shared by Login and Sign Up: optional language switch, logo,
+/// title and subtitle.
+class AuthHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool showLanguageSwitch;
+  final double logoSize;
+
+  const AuthHeader({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    this.showLanguageSwitch = true,
+    this.logoSize = 84,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isAr = context.locale.languageCode == 'ar';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (showLanguageSwitch)
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => context.read<LocaleCubit>().changeLocale(context, Locale(isAr ? 'en' : 'ar')),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: AppColors.primaryLight, borderRadius: BorderRadius.circular(20)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.language_rounded, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      isAr ? 'English' : 'العربية',
+                      style: AppTextStyles.caption.copyWith(color: AppColors.primaryDark, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (showLanguageSwitch) const SizedBox(height: 12),
+        AuthLogo(size: logoSize),
+        const SizedBox(height: 16),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: AppTextStyles.heading1.copyWith(fontSize: 24, color: AppColors.primaryDark),
+        ),
+        const SizedBox(height: 6),
+        Text(subtitle, textAlign: TextAlign.center, style: AppTextStyles.bodySmall.copyWith(height: 1.6)),
+      ],
+    );
+  }
+}
+
+/// Brand logo (assets/images/akark_logo.png) on a rounded white square.
+/// Falls back to an icon if the image asset is missing.
+class AuthLogo extends StatelessWidget {
+  const AuthLogo({super.key, this.size = 84});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(size * 0.14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(size * 0.28),
+        boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 20, offset: Offset(0, 8))],
+      ),
+      child: Image.asset(
+        'assets/images/akark_logo.png',
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => Icon(Icons.home_work_rounded, color: AppColors.primary, size: size * 0.5),
+      ),
+    );
+  }
+}

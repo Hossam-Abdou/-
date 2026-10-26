@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../../../core/shared/widgets/skeleton_list.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/network/api_error_text.dart';
+import '../../../../core/shared/cubit/api_state.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../listings/models/listing_model.dart';
+import '../models/marketer_property_mapper.dart';
 import '../../../../config/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
@@ -9,10 +16,7 @@ import '../../../../generated/locale_keys.g.dart';
 import '../models/marketer_property.dart';
 import '../widgets/property_image_thumbnail.dart';
 
-/// Lists the marketer's own properties. Stateful only so it can
-/// refresh its list after returning from add/edit (which mutate
-/// [mockMarketerProperties] in place — there's no stream/repository
-/// yet to listen to).
+/// Lists the marketer's own properties from the backend (pull to refresh).
 class MyPropertiesScreen extends StatefulWidget {
   const MyPropertiesScreen({super.key});
 
@@ -21,13 +25,21 @@ class MyPropertiesScreen extends StatefulWidget {
 }
 
 class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
-  Future<void> _openForm(String? route, {String? propertyId}) async {
-    await Navigator.pushNamed(context, route!, arguments: propertyId);
-    if (mounted) setState(() {});
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<MyListingsCubit>().load();
+    });
+  }
+
+  Future<void> _openForm(String route, {String? propertyId}) async {
+    await Navigator.pushNamed(context, route, arguments: propertyId);
   }
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.locale.languageCode;
     return Scaffold(
       appBar: AppBar(
         title: Text(LocaleKeys.myPropertiesTitle.tr(), style: AppTextStyles.heading3),
@@ -40,22 +52,52 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
         ],
       ),
       body: SafeArea(
-        child: mockMarketerProperties.isEmpty
-            ? _EmptyState(onAddProperty: () => _openForm(AppRoutes.marketerAddProperty))
-            : ListView(
+        child: BlocBuilder<MyListingsCubit, ApiState<ListingModel>>(
+          builder: (context, state) {
+            final properties = [for (final l in state.items) l.toMarketerProperty(lang)];
+            if (properties.isEmpty && state.isLoading) {
+              return const SingleChildScrollView(padding: EdgeInsets.all(16), child: SkeletonList());
+            }
+            if (properties.isEmpty) {
+              return RefreshIndicator(
+                onRefresh: () => context.read<MyListingsCubit>().load(),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    SizedBox(
+                      height: 400,
+                      child: _EmptyState(onAddProperty: () => _openForm(AppRoutes.marketerAddProperty)),
+                    ),
+                    if (state.error != null)
+                      Center(child: Text(state.error!.text, style: AppTextStyles.bodySmall)),
+                  ],
+                ),
+              );
+            }
+            return RefreshIndicator(
+              onRefresh: () => context.read<MyListingsCubit>().load(),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                children: mockMarketerProperties
-                    .map(
-                      (p) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _PropertyListItem(
-                          property: p,
-                          onTap: () => _openForm(AppRoutes.marketerEditProperty, propertyId: p.id),
-                        ),
+                children: [
+                  for (final p in properties)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _PropertyListItem(
+                        property: p,
+                        onTap: () => _openForm(AppRoutes.marketerEditProperty, propertyId: p.id),
+                        onVisibilityChanged: (visible) async {
+                          final cubit = context.read<MyListingsCubit>();
+                          await cubit.update(p.id, {'is_published': visible});
+                          cubit.load(); // the update reply has no photos / location
+                        },
                       ),
-                    )
-                    .toList(),
+                    ),
+                ],
               ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -64,7 +106,8 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
 class _PropertyListItem extends StatelessWidget {
   final MarketerProperty property;
   final VoidCallback onTap;
-  const _PropertyListItem({required this.property, required this.onTap});
+  final ValueChanged<bool> onVisibilityChanged;
+  const _PropertyListItem({required this.property, required this.onTap, required this.onVisibilityChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -84,6 +127,11 @@ class _PropertyListItem extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(property.title, style: AppTextStyles.heading4, textAlign: TextAlign.start),
+                  if (!property.isPublished)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(LocaleKeys.propertyHiddenBadge.tr(), style: AppTextStyles.caption.copyWith(color: AppColors.error)),
+                    ),
                   const SizedBox(height: 2),
                   Text(property.location, style: AppTextStyles.bodySmall, textAlign: TextAlign.start),
                   const SizedBox(height: 6),
@@ -93,6 +141,18 @@ class _PropertyListItem extends StatelessWidget {
                       Text(property.priceLabel, style: AppTextStyles.priceLarge),
                       const SizedBox(width: 12),
                       Text(property.areaLabel, style: AppTextStyles.bodySmall),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(LocaleKeys.propertyVisibleShort.tr(), style: AppTextStyles.caption),
+                      Switch(
+                        value: property.isPublished,
+                        activeColor: AppColors.primary,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: onVisibilityChanged,
+                      ),
                     ],
                   ),
                 ],

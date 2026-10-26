@@ -3,8 +3,14 @@ import 'package:easy_localization/easy_localization.dart';
 import '../../../../config/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../../../../core/shared/widgets/app_primary_button.dart';
+import '../../../../core/shared/widgets/buttons/app_primary_button.dart';
 import '../../../../generated/locale_keys.g.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/shared/cubit/api_state.dart';
+import '../../../listings/widgets/listings_message.dart';
+import '../../../requests/cubit/requests_cubit.dart';
+import '../../../requests/models/request_model.dart';
+import '../../../requests/models/request_preview.dart';
 import '../../home/models/property_request.dart';
 import '../widgets/tracked_request_card.dart';
 
@@ -27,8 +33,28 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
   _RequestFilter _filter = _RequestFilter.all;
 
   @override
+  void initState() {
+    super.initState();
+    context.read<RequestsCubit>().load();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final requests = mockRecentRequests.where((r) {
+    return BlocConsumer<RequestsCubit, ApiState<RequestModel>>(
+      // Keep the shared request cache (used by details / edit) in step with the server.
+      listenWhen: (a, b) => b.status == ApiStatus.success,
+      listener: (context, state) {
+        mockRecentRequests
+          ..clear()
+          ..addAll(state.items.map((r) => r.toPreview()));
+      },
+      builder: (context, state) => _buildList(context, state),
+    );
+  }
+
+  Widget _buildList(BuildContext context, ApiState<RequestModel> state) {
+    final all = state.items.map((r) => r.toPreview()).toList();
+    final requests = all.where((r) {
       switch (_filter) {
         case _RequestFilter.all:
           return true;
@@ -39,12 +65,18 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
       }
     }).toList();
 
+    final message = ListingsMessage.of(state, () => context.read<RequestsCubit>().load());
+    final loadingOrError = message != null && state.items.isEmpty && state.status != ApiStatus.success;
+
     return SafeArea(
-      child: ListView(
+      child: RefreshIndicator(
+        onRefresh: () => context.read<RequestsCubit>().load(),
+        child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           Text(
-            LocaleKeys.myRequestsTitle.tr(args: ['${mockRecentRequests.length}']),
+            LocaleKeys.myRequestsTitle.tr(args: ['${all.length}']),
             style: AppTextStyles.heading2,
             textAlign: TextAlign.start,
           ),
@@ -60,7 +92,9 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          if (requests.isEmpty)
+          if (loadingOrError)
+            message
+          else if (requests.isEmpty)
             const _EmptyState()
           else
             ...requests.map(
@@ -79,6 +113,7 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
             onPressed: () => Navigator.pushNamed(context, AppRoutes.createRequestLocation),
           ),
         ],
+      ),
       ),
     );
   }

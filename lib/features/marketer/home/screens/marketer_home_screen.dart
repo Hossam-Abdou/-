@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../../../core/shared/widgets/skeleton_list.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/network/api_error_text.dart';
+import '../../../offers/cubit/offers_cubit.dart';
+import '../../../requests/cubit/requests_cubit.dart';
+import '../../main_layout/models/marketer_request_mapper.dart';
 import '../../../../config/router/app_router.dart';
 import '../../../../core/shared/cubit/bottom_bar_cubit.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -13,55 +19,80 @@ import '../../main_layout/widgets/marketer_request_card.dart';
 /// top matches + shortcuts), separate from the "Requests" tab which
 /// is the full browsable list of every client request. Home answers
 /// "how am I doing today", Requests answers "what can I respond to".
-class MarketerHomeScreen extends StatelessWidget {
+class MarketerHomeScreen extends StatefulWidget {
   const MarketerHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Home shows every available request, including ones already
-    // offered on (status is shown via the badge on each card) —
-    // it's the full browse feed. The "Requests" tab is the filtered
-    // view of only what this marketer has personally engaged with.
-    final allRequests = mockMarketerRequests;
+  State<MarketerHomeScreen> createState() => _MarketerHomeScreenState();
+}
 
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          _Header(),
-          const SizedBox(height: 20),
-          const _StatsRow(),
-          const SizedBox(height: 20),
-          _QuickActionsRow(),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              GestureDetector(
-                onTap: () => BottomBarCubit.get(context).changeIndex(1),
-                child: Text(LocaleKeys.viewAll.tr(), style: AppTextStyles.bodySmall.copyWith(color: AppColors.primaryDark)),
-              ),
-              Text(LocaleKeys.recentRequestsTitle.tr(), style: AppTextStyles.heading4, textAlign: TextAlign.start),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (allRequests.isEmpty)
-            SectionCard(
-              child: Text(LocaleKeys.noNewMatchesDesc.tr(), style: AppTextStyles.bodyRegular, textAlign: TextAlign.center),
-            )
-          else
-            ...allRequests.map(
-              (r) => Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: MarketerRequestCard(
-                  request: r,
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.marketerRequestDetails, arguments: r.id),
-                  onAction: () => Navigator.pushNamed(context, AppRoutes.marketerSendOffer, arguments: r.id),
+class _MarketerHomeScreenState extends State<MarketerHomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) loadMarketerRequests(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Home shows every open request, including ones already offered on
+    // (status is shown via the badge on each card). The "Requests" tab is
+    // the filtered view of only what this marketer has sent offers on.
+    return MarketerRequestsBuilder(
+      builder: (context, allRequests, loading) {
+        final error = context.watch<RequestsCubit>().state.error;
+        return SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () => loadMarketerRequests(context),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              children: [
+                _Header(),
+                const SizedBox(height: 20),
+                const _StatsRow(),
+                const SizedBox(height: 20),
+                _QuickActionsRow(),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    GestureDetector(
+                      onTap: () => BottomBarCubit.get(context).changeIndex(1),
+                      child: Text(LocaleKeys.viewAll.tr(), style: AppTextStyles.bodySmall.copyWith(color: AppColors.primaryDark)),
+                    ),
+                    Text(LocaleKeys.recentRequestsTitle.tr(), style: AppTextStyles.heading4, textAlign: TextAlign.start),
+                  ],
                 ),
-              ),
+                const SizedBox(height: 16),
+                if (allRequests.isEmpty && loading)
+                  const SkeletonList()
+                else if (allRequests.isEmpty)
+                  SectionCard(
+                    child: Text(
+                      error != null ? error.text : LocaleKeys.noNewMatchesDesc.tr(),
+                      style: AppTextStyles.bodyRegular,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else
+                  ...allRequests.map(
+                    (r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: MarketerRequestCard(
+                        request: r,
+                        onTap: () => Navigator.pushNamed(context, AppRoutes.marketerRequestDetails, arguments: r.id),
+                        onAction: () => Navigator.pushNamed(context, AppRoutes.marketerSendOffer, arguments: r.id),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -97,15 +128,17 @@ class _StatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Demo copy — will come from the account after the backend is wired up.
     final newMatches = mockMarketerRequests.where((r) => r.status == MarketerRequestStatus.none).length;
+    final offers = context.watch<OffersCubit>().state.items;
+    final sent = offers.length;
+    final accepted = offers.where((o) => o.status == 'accepted').length;
     return Row(
       children: [
         Expanded(child: _StatCard(value: '$newMatches', label: LocaleKeys.statNewMatches.tr(), icon: Icons.new_releases_outlined)),
         const SizedBox(width: 8),
-        Expanded(child: _StatCard(value: '45', label: LocaleKeys.profileOffersSentLabel.tr(), icon: Icons.send_outlined)),
+        Expanded(child: _StatCard(value: '$sent', label: LocaleKeys.profileOffersSentLabel.tr(), icon: Icons.send_outlined)),
         const SizedBox(width: 8),
-        Expanded(child: _StatCard(value: '12', label: LocaleKeys.profileDealsClosedLabel.tr(), icon: Icons.handshake_outlined)),
+        Expanded(child: _StatCard(value: '$accepted', label: LocaleKeys.profileDealsClosedLabel.tr(), icon: Icons.handshake_outlined)),
       ],
     );
   }

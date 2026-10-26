@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../../../core/shared/widgets/skeleton_list.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/network/api_error_text.dart';
+import '../../../listings/cubit/listings_cubit.dart';
+import '../../../offers/cubit/offers_cubit.dart';
+import '../../properties/models/marketer_property_mapper.dart';
 import '../../../../config/router/app_router.dart';
 import '../../../../core/shared/widgets/buttons/app_back_button.dart';
 import '../../../../core/shared/widgets/buttons/app_primary_button.dart';
@@ -8,17 +14,17 @@ import '../../../../core/shared/widgets/section_card.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../generated/locale_keys.g.dart';
-import '../../../customer/home/models/offer_preview.dart';
-import '../../properties/models/marketer_property.dart';
+import '../../../../core/shared/cubit/api_state.dart';
+import '../../../listings/models/listing_model.dart';
 import '../../properties/widgets/property_selector_card.dart';
 import '../models/marketer_request.dart';
 
 /// Form the marketer fills in to send (or update) an offer against a
 /// client request. Takes the request's id through `settings.arguments`
-/// (see `AppRoutes.marketerSendOffer`) and is looked up from mock data.
+/// (see `AppRoutes.marketerSendOffer`).
 ///
 /// The marketer picks one of their own listed properties (from
-/// [mockMarketerProperties]) rather than typing a property in by
+/// the marketer's listings) rather than typing a property in by
 /// hand — this is the piece that wasn't implemented before.
 ///
 /// Submission is simulated: there's no backend yet, so this validates
@@ -40,6 +46,14 @@ class _SendOfferScreenState extends State<SendOfferScreen> {
   bool _submitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<MyListingsCubit>().load();
+    });
+  }
+
+  @override
   void dispose() {
     _messageController.dispose();
     super.dispose();
@@ -49,34 +63,25 @@ class _SendOfferScreenState extends State<SendOfferScreen> {
     setState(() => _propertyError = _selectedPropertyId == null ? LocaleKeys.propertyRequiredError.tr() : null);
     if (_selectedPropertyId == null) return;
 
+    final lang = context.locale.languageCode;
+    final listing = context.read<MyListingsCubit>().state.items.where((l) => l.id == _selectedPropertyId).firstOrNull;
+    final property = listing?.toMarketerProperty(lang);
+    final text = _messageController.text.trim();
+
     setState(() => _submitting = true);
-    // Demo-only delay to feel like a real submission; replace with an
-    // API call once the backend exists.
-    await Future.delayed(const Duration(milliseconds: 600));
+    final cubit = context.read<OffersCubit>();
+    final ok = await cubit.send(
+      requestId: widget.request.id,
+      propertyId: _selectedPropertyId,
+      message: text.isNotEmpty ? text : LocaleKeys.defaultOfferMessage.tr(),
+      images: property?.imagePaths.take(5).toList() ?? const [],
+    );
     if (!mounted) return;
     setState(() => _submitting = false);
-
-    // Push the offer (with the chosen property's photo) onto the
-    // customer's request-details screen, when this demo request has a
-    // matching one there — see [MarketerRequest.linkedCustomerRequestId].
-    final linkedRequestId = widget.request.linkedCustomerRequestId;
-    if (linkedRequestId != null) {
-      final property = findMarketerPropertyById(_selectedPropertyId);
-      addOfferPreview(
-        linkedRequestId,
-        OfferPreview(
-          id: 'offer-${DateTime.now().millisecondsSinceEpoch}',
-          marketerName: 'أحمد محمود',
-          rating: 4.8,
-          reviewsCount: 0,
-          timeAgo: LocaleKeys.justNow.tr(),
-          message: _messageController.text.trim().isNotEmpty
-              ? _messageController.text.trim()
-              : LocaleKeys.defaultOfferMessage.tr(),
-          propertyTitle: property?.title,
-          propertyImagePaths: property?.imagePaths ?? const [],
-        ),
-      );
+    if (!ok) {
+      final e = cubit.state.error;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e?.text ?? LocaleKeys.apiErrGeneric.tr())));
+      return;
     }
 
     await showDialog<void>(
@@ -105,7 +110,8 @@ class _SendOfferScreenState extends State<SendOfferScreen> {
       ),
     );
     if (!mounted) return;
-    Navigator.of(context).pop();
+    // Back to the marketer home, not just the previous screen.
+    Navigator.of(context).popUntil((route) => route.settings.name == AppRoutes.marketerRequests || route.isFirst);
   }
 
   @override
@@ -155,42 +161,53 @@ class _SendOfferScreenState extends State<SendOfferScreen> {
             const SizedBox(height: 24),
             Text(LocaleKeys.selectPropertyPrompt.tr(), style: AppTextStyles.heading4, textAlign: TextAlign.start),
             const SizedBox(height: 16),
-            if (mockMarketerProperties.isEmpty)
-              SectionCard(
-                child: Column(
-                  children: [
-                    Text(LocaleKeys.noPropertiesTitle.tr(), style: AppTextStyles.heading4, textAlign: TextAlign.center),
-                    const SizedBox(height: 4),
-                    Text(LocaleKeys.noPropertiesDesc.tr(), style: AppTextStyles.bodyRegular, textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pushNamed(context, AppRoutes.marketerAddProperty),
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-                      child: Text(LocaleKeys.addFirstPropertyButton.tr()),
+            BlocBuilder<MyListingsCubit, ApiState<ListingModel>>(
+              builder: (context, state) {
+                final lang = context.locale.languageCode;
+                final properties = [for (final l in state.items) l.toMarketerProperty(lang)];
+                if (properties.isEmpty && state.isLoading) {
+                  return const SkeletonList(count: 2);
+                }
+                if (properties.isEmpty) {
+                  return SectionCard(
+                    child: Column(
+                      children: [
+                        Text(LocaleKeys.noPropertiesTitle.tr(), style: AppTextStyles.heading4, textAlign: TextAlign.center),
+                        const SizedBox(height: 4),
+                        Text(LocaleKeys.noPropertiesDesc.tr(), style: AppTextStyles.bodyRegular, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pushNamed(context, AppRoutes.marketerAddProperty),
+                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                          child: Text(LocaleKeys.addFirstPropertyButton.tr()),
+                        ),
+                      ],
                     ),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final p in properties)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: PropertySelectorCard(
+                          property: p,
+                          isSelected: _selectedPropertyId == p.id,
+                          onTap: () => setState(() {
+                            _selectedPropertyId = p.id;
+                            _propertyError = null;
+                          }),
+                        ),
+                      ),
+                    if (_propertyError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(_propertyError!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.error), textAlign: TextAlign.start),
+                      ),
                   ],
-                ),
-              )
-            else ...[
-              ...mockMarketerProperties.map(
-                (p) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: PropertySelectorCard(
-                    property: p,
-                    isSelected: _selectedPropertyId == p.id,
-                    onTap: () => setState(() {
-                      _selectedPropertyId = p.id;
-                      _propertyError = null;
-                    }),
-                  ),
-                ),
-              ),
-              if (_propertyError != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(_propertyError!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.error), textAlign: TextAlign.start),
-                ),
-            ],
+                );
+              },
+            ),
             const SizedBox(height: 8),
             AppTextField(
               label: LocaleKeys.offerMessageLabel.tr(),

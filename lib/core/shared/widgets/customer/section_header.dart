@@ -5,7 +5,9 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/app_text_styles.dart';
 class SectionHeader extends StatelessWidget {
   final VoidCallback onViewAllTap;
-  const SectionHeader({required this.onViewAllTap});
+  /// Defaults to "Recent requests" when null.
+  final String? title;
+  const SectionHeader({required this.onViewAllTap, this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +20,7 @@ class SectionHeader extends StatelessWidget {
         ),
         Flexible(
           child: Text(
-            LocaleKeys.recentRequestsTitle.tr(),
+            title ?? LocaleKeys.recentRequestsTitle.tr(),
             style: AppTextStyles.heading4,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.start,

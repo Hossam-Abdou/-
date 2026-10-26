@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/shared/widgets/fields/app_select_field.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 
@@ -29,7 +30,7 @@ class LabeledDropdownField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -42,29 +43,13 @@ class LabeledDropdownField extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<String>(
-          initialValue: options.contains(value) ? value : null,
-          isExpanded: true,
-          alignment: AlignmentDirectional.centerEnd,
-          onChanged: enabled ? onChanged : null,
-          icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
-          disabledHint: Text(placeholder, style: AppTextStyles.bodyRegular.copyWith(color: AppColors.textMuted), textAlign: TextAlign.start),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: enabled ? AppColors.surface : AppColors.background,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-            disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-          ),
-          hint: Text(placeholder, style: AppTextStyles.bodyRegular.copyWith(color: AppColors.textMuted), textAlign: TextAlign.start),
-          items: options
-              .map((o) => DropdownMenuItem(
-                    value: o,
-                    child: Text(o, style: AppTextStyles.bodyRegular.copyWith(color: AppColors.textPrimary), textAlign: TextAlign.start),
-                  ))
-              .toList(),
+        AppSelectField<String>(
+          value: options.contains(value) ? value : null,
+          options: [for (final o in options) SelectOption(o, o)],
+          placeholder: placeholder,
+          sheetTitle: label,
+          enabled: enabled,
+          onChanged: onChanged,
         ),
       ],
     );
